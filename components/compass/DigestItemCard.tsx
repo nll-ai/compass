@@ -9,7 +9,15 @@ import { SignificanceBadge } from "./SignificanceBadge";
 import { SourceBadge } from "./SourceBadge";
 import type { SourceType } from "@/lib/types";
 
-export function DigestItemCard({ item }: { item: DigestItem }) {
+export function DigestItemCard({
+  item,
+  onOpenInOverlay,
+  onSourceClick,
+}: {
+  item: DigestItem;
+  onOpenInOverlay?: () => void;
+  onSourceClick?: (url: string) => void;
+}) {
   const setFeedback = useMutation(api.digestItems.setFeedback);
   const hasSources = Array.isArray(item.sources) && item.sources.length > 0;
   const isGood = item.feedback === "good";
@@ -25,6 +33,25 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
       <p className="muted" style={{ margin: 0 }}>
         {item.synthesis}
       </p>
+      {onOpenInOverlay != null && (
+        <button
+          type="button"
+          onClick={onOpenInOverlay}
+          style={{
+            alignSelf: "flex-start",
+            padding: "0.35rem 0.75rem",
+            fontSize: "0.85rem",
+            fontWeight: 600,
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            background: "transparent",
+            cursor: "pointer",
+          }}
+        >
+          View
+        </button>
+      )}
       {hasSources && (
         <div className="stack" style={{ marginTop: "0.5rem" }}>
           <span className="muted" style={{ fontSize: "0.85rem", fontWeight: 600 }}>
@@ -33,23 +60,46 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {item.sources.map((s, i) => (
               <li key={i}>
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                    fontSize: "0.9rem",
-                    color: "#2563eb",
-                    textDecoration: "none",
-                  }}
-                >
-                  <SourceBadge source={s.source as SourceType} />
-                  <span>{s.title || "View"}</span>
-                  <span aria-hidden>↗</span>
-                </a>
+                {onSourceClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onSourceClick(s.url)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                      fontSize: "0.9rem",
+                      color: "#2563eb",
+                      textDecoration: "none",
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    <SourceBadge source={s.source as SourceType} />
+                    <span>{s.title || "View"}</span>
+                    <span aria-hidden>↗</span>
+                  </button>
+                ) : (
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                      fontSize: "0.9rem",
+                      color: "#2563eb",
+                      textDecoration: "none",
+                    }}
+                  >
+                    <SourceBadge source={s.source as SourceType} />
+                    <span>{s.title || "View"}</span>
+                    <span aria-hidden>↗</span>
+                  </a>
+                )}
               </li>
             ))}
           </ul>

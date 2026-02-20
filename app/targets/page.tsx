@@ -11,7 +11,7 @@ export default function TargetsPage() {
   if (targets === undefined) {
     return (
       <div className="stack">
-        <h1>Watch targets</h1>
+        <h1>Watch Targets</h1>
         <p className="muted">Loading…</p>
       </div>
     );
@@ -19,19 +19,19 @@ export default function TargetsPage() {
 
   return (
     <div className="stack">
-      <h1>Watch targets</h1>
+      <h1>Watch Targets</h1>
       <p className="muted">Programs and biological targets you're monitoring.</p>
       <Link
         href="/targets/new"
         className="card muted"
         style={{ display: "inline-block", padding: "0.5rem 1rem" }}
       >
-        + Add target
+        + Add Watch Target
       </Link>
       {targets.length === 0 ? (
         <div className="card">
           <p className="muted" style={{ margin: 0 }}>
-            No targets yet. <Link href="/targets/new">Add your first target</Link>.
+            No watch targets yet. <Link href="/targets/new">Add your first watch target</Link>.
           </p>
         </div>
       ) : (

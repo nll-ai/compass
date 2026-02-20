@@ -95,7 +95,7 @@ export default function SetupPage() {
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Run first scan</h2>
           <p className="muted" style={{ margin: 0 }}>
-            We'll create a scan run for {targetCount} target(s). Source scanners will be wired in a later phase; for now this creates the run record.
+            We'll create a scan run for {targetCount} watch target(s). Source scanners will be wired in a later phase; for now this creates the run record.
           </p>
           {!scanTriggered ? (
             <button

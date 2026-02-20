@@ -4,7 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { runAllSources, type SourceName } from "../../../lib/scan/sources";
 import { generateDigest } from "../../../lib/scan/digest";
-import type { ScanOptions } from "../../../lib/scan/types";
+import type { ScanOptions, ScanTarget } from "../../../lib/scan/types";
 
 const SOURCES: SourceName[] = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"];
 
@@ -94,8 +94,21 @@ export async function POST(request: Request) {
       totalItemsFound: 0,
       newItemsFound: 0,
     });
-    return NextResponse.json({ ok: true, scanRunId, message: "No targets" });
+    return NextResponse.json({ ok: true, scanRunId, message: "No watch targets" });
   }
+
+  const scanTargets: ScanTarget[] = targets.map((t) => ({
+    _id: t._id,
+    name: t.name,
+    displayName: t.displayName,
+    aliases: t.aliases,
+    therapeuticArea: t.therapeuticArea,
+    type: t.type,
+    indication: t.indication,
+    company: t.company,
+    learnedQueryTerms: t.learnedQueryTerms ?? [],
+    excludeQueryTerms: t.excludeQueryTerms ?? [],
+  }));
 
   const env = {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -111,7 +124,7 @@ export async function POST(request: Request) {
     startedAt: Date.now(),
   });
 
-  const sourceResults = await runAllSources(targets, env, scanOptions);
+  const sourceResults = await runAllSources(scanTargets, env, scanOptions);
 
   let totalFound = 0;
   let newFound = 0;
@@ -168,7 +181,7 @@ export async function POST(request: Request) {
   const scan = await client.query(api.scans.get, { id: scanRunId });
   if (newFound > 0 || scan?.period === "weekly") {
     const newItems = await client.query(api.rawItems.getNewByScanRunFromServer, { secret: effectiveSecret, scanRunId });
-    const targetNames = new Map(targets.map((t) => [t._id, t.displayName]));
+    const targetNames = new Map(scanTargets.map((t) => [t._id, t.displayName]));
     const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
     const payload = await generateDigest(
       newItems,

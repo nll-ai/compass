@@ -119,7 +119,7 @@ export function AddTargetForm({
       {!filled ? (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            Tell us what you want to track — a program name, asset, target, or a description. We'll look it up and fill the details for you.
+            Tell us what you want to track — a program name, asset, watch target, or a description. We'll look it up and fill the details for you.
           </p>
           <form onSubmit={handleLookup} className="stack">
             <label>
@@ -153,7 +153,7 @@ export function AddTargetForm({
       ) : (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            Review and edit the details below, then click Add target. All fields were filled from a web search.
+            Review and edit the details below, then click Add Watch Target. All fields were filled from a web search.
           </p>
           <form onSubmit={handleAddTarget} className="stack">
             <label>
@@ -234,7 +234,7 @@ export function AddTargetForm({
             </label>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
               <button type="submit" style={primaryButton}>
-                Add target
+                Add Watch Target
               </button>
               <button
                 type="button"
@@ -251,7 +251,7 @@ export function AddTargetForm({
 
       {hasTargets && showContinueToSlack && (
         <p className="muted" style={{ margin: 0 }}>
-          {targetCount} target(s) added. Add more above or continue to Step 2.
+          {targetCount} watch target(s) added. Add more above or continue to Step 2.
         </p>
       )}
       {showContinueToSlack && onContinueToSlack && (

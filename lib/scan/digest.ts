@@ -38,8 +38,18 @@ export interface DigestPayload {
 
 /** User feedback from past digest items, used to tune the prompt. */
 export interface FeedbackContext {
-  good: Array<{ headline: string; synthesis: string }>;
-  bad: Array<{ headline: string; synthesis: string }>;
+  good: Array<{
+    watchTargetId: string;
+    headline: string;
+    synthesis: string;
+    rawSnippets?: Array<{ title: string; abstractSnippet: string }>;
+  }>;
+  bad: Array<{
+    watchTargetId: string;
+    headline: string;
+    synthesis: string;
+    rawSnippets?: Array<{ title: string; abstractSnippet: string }>;
+  }>;
 }
 
 function isCategory(c: string): c is Category {
@@ -94,14 +104,26 @@ export async function generateDigest(
   const good = feedbackContext?.good ?? [];
   const bad = feedbackContext?.bad ?? [];
   const hasFeedback = good.length > 0 || bad.length > 0;
+  const formatExample = (
+    g: { headline: string; synthesis: string; rawSnippets?: Array<{ title: string; abstractSnippet: string }> }
+  ) => {
+    const line = `- "${g.headline}" / ${(g.synthesis ?? "").slice(0, 120)}...`;
+    const sourceLine =
+      g.rawSnippets && g.rawSnippets.length > 0
+        ? `  Source content: ${g.rawSnippets.map((s) => `${s.title} | ${s.abstractSnippet.slice(0, 100)}`).join("; ")}`
+        : "";
+    return sourceLine ? `${line}\n${sourceLine}` : line;
+  };
   const feedbackBlock = hasFeedback
     ? `
 
-Learn from user feedback. Users marked these digest items as RELEVANT (emulate this style and relevance):
-${good.slice(0, 10).map((g) => `- "${g.headline}" / ${(g.synthesis ?? "").slice(0, 120)}...`).join("\n")}
+Learn from user feedback. When digesting items for a watch target, emulate the RELEVANT examples for that target and avoid the NOT RELEVANT patterns (e.g. wrong therapeutic context, plant/agricultural when human/cardio/oncology is intended, or noise).
 
-Users marked these as NOT RELEVANT (avoid similar; e.g. wrong therapeutic context, plant/agricultural when human/cardio/oncology is intended, or noise):
-${bad.slice(0, 10).map((b) => `- "${b.headline}" / ${(b.synthesis ?? "").slice(0, 120)}...`).join("\n")}
+RELEVANT (emulate this style and relevance):
+${good.slice(0, 10).map(formatExample).join("\n")}
+
+NOT RELEVANT (avoid similar):
+${bad.slice(0, 10).map(formatExample).join("\n")}
 `
       : "";
 

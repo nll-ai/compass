@@ -30,10 +30,9 @@ export async function runPatents(
   try {
     for (const target of targets) {
       if (throttleMs > 0) await sleep(throttleMs);
-      const terms = [target.name, target.displayName, ...target.aliases]
-        .slice(0, 3)
-        .filter(Boolean)
-        .join(" ");
+      const baseTerms = [target.name, target.displayName, ...target.aliases].filter(Boolean);
+      const learned = (target.learnedQueryTerms ?? []).slice(0, 3);
+      const terms = [...baseTerms, ...learned].slice(0, 6).join(" ").trim();
       if (!terms.trim()) continue;
 
       const q = {

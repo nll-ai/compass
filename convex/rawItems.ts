@@ -128,3 +128,12 @@ export const listByWatchTarget = query({
       .take(limit);
   },
 });
+
+/** Get raw items by ids for showing original page content in the UI (e.g. overlay). */
+export const getByIds = query({
+  args: { ids: v.array(v.id("rawItems")) },
+  handler: async (ctx, { ids }) => {
+    const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return results.filter((r) => r != null);
+  },
+});

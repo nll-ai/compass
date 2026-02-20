@@ -134,7 +134,10 @@ export const getSourceStatuses = query({
 });
 
 export const scheduleScan = internalMutation({
-  args: { period: v.union(v.literal("daily"), v.literal("weekly")) },
+  args: {
+    period: v.union(v.literal("daily"), v.literal("weekly")),
+    targetIds: v.optional(v.array(v.id("watchTargets"))),
+  },
   handler: async (ctx, args) => {
     const scanRunId = await ctx.db.insert("scanRuns", {
       scheduledFor: Date.now(),
@@ -153,7 +156,11 @@ export const scheduleScan = internalMutation({
         itemsFound: 0,
       });
     }
-    await ctx.scheduler.runAfter(0, internal.scans.callScanApi, { scanRunId, period: args.period });
+    await ctx.scheduler.runAfter(0, internal.scans.callScanApi, {
+      scanRunId,
+      period: args.period,
+      targetIds: args.targetIds,
+    });
     return scanRunId;
   },
 });

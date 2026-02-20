@@ -12,19 +12,20 @@ function scopeForTherapeuticArea(area?: TherapeuticArea): string {
   return `(${human})`;
 }
 
-/** Exclude plant/agricultural terms that often pollute gene/target searches. */
-const EXCLUDE_PLANT_TERMS = "(plant OR plants OR rice OR arabidopsis OR tobacco OR crop OR maize OR wheat OR soybean OR seedling OR rhizobia)";
-
 function getRetmax(options?: ScanOptions): number {
   return options?.mode === "comprehensive" ? 40 : 5;
 }
 
 function buildPubmedQuery(target: ScanTarget): string {
-  const terms = [target.name, ...target.aliases].slice(0, 5).filter(Boolean);
+  const baseTerms = [target.name, ...target.aliases].slice(0, 5).filter(Boolean);
+  const learnedTerms = (target.learnedQueryTerms ?? []).slice(0, 5);
+  const terms = [...baseTerms, ...learnedTerms].map((t) => t.trim()).filter(Boolean);
   if (terms.length === 0) return "";
-  const core = terms.map((t) => t.trim()).filter(Boolean).join(" OR ");
+  const core = terms.join(" OR ");
   const scope = scopeForTherapeuticArea(target.therapeuticArea);
-  return `(${core}) AND ${scope} NOT ${EXCLUDE_PLANT_TERMS}`;
+  const excludeTerms = (target.excludeQueryTerms ?? []).map((t) => t.trim()).filter(Boolean);
+  const notClause = excludeTerms.length > 0 ? ` NOT (${excludeTerms.join(" OR ")})` : "";
+  return `(${core}) AND ${scope}${notClause}`;
 }
 
 export async function runPubmed(
@@ -68,6 +69,23 @@ export async function runPubmed(
       };
       const result = summaryData.result ?? {};
 
+      // Fetch abstracts so we can show "content from original page" in the UI
+      let abstractByPmid: Record<string, string> = {};
+      if (idlist.length > 0) {
+        if (throttleMs > 0) await sleep(throttleMs);
+        const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${idlist.join(",")}&rettype=abstract&retmode=text${apiKey ? `&api_key=${apiKey}` : ""}`;
+        const fetchRes = await fetchWithRetry(fetchUrl);
+        if (fetchRes.ok) {
+          const text = await fetchRes.text();
+          const blocks = text.split(/\n\nPMID: (\d+) \[Indexed for MEDLINE\]/);
+          for (let i = 1; i < blocks.length; i += 2) {
+            const pmid = blocks[i];
+            const block = blocks[i - 1]?.trim() ?? "";
+            if (pmid && block) abstractByPmid[pmid] = block;
+          }
+        }
+      }
+
       for (const pmid of idlist) {
         const title = result[pmid]?.title?.trim() || `PubMed ${pmid}`;
         items.push({
@@ -75,6 +93,7 @@ export async function runPubmed(
           externalId: pmid,
           title,
           url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+          abstract: abstractByPmid[pmid],
           metadata: {},
         });
       }

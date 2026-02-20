@@ -19,6 +19,10 @@ export interface ScanTarget {
   type?: "drug" | "target" | "company";
   indication?: string;
   company?: string;
+  /** Phrases to add to search queries, derived from user feedback. */
+  learnedQueryTerms?: string[];
+  /** Terms to exclude from search, derived from user feedback. */
+  excludeQueryTerms?: string[];
 }
 
 export interface RawItemInput {

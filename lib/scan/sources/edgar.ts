@@ -54,7 +54,9 @@ export async function runEdgar(
     const formsWeWant = ["10-K", "10-Q"];
 
     for (const target of targets) {
-      const searchTerms = [target.name, target.displayName, ...target.aliases].map((s) =>
+      const baseTerms = [target.name, target.displayName, ...target.aliases];
+      const learned = (target.learnedQueryTerms ?? []).slice(0, 3);
+      const searchTerms = [...baseTerms, ...learned].map((s) =>
         s.trim().toLowerCase()
       ).filter(Boolean);
       const matches = companies.filter((c) => {

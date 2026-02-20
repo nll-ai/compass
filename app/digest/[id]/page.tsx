@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "convex/react";
@@ -7,13 +8,16 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ExecutiveSummaryBanner } from "@/components/compass/ExecutiveSummaryBanner";
 import { DigestItemCard } from "@/components/compass/DigestItemCard";
+import { SignalOverlay } from "@/components/compass/SignalOverlay";
 import { formatDate } from "@/lib/formatters";
+import type { DigestItem } from "@/lib/types";
 
 export default function DigestDetailPage() {
   const params = useParams();
   const id = params.id as Id<"digestRuns">;
   const digestRun = useQuery(api.digestRuns.get, { id });
   const items = useQuery(api.digestItems.listByDigestRun, { digestRunId: id });
+  const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
 
   if (digestRun === undefined || items === undefined) {
     return (
@@ -36,6 +40,7 @@ export default function DigestDetailPage() {
 
   return (
     <div className="stack">
+      <SignalOverlay open={!!overlayItem} item={overlayItem} onClose={() => setOverlayItem(null)} />
       <nav className="muted" style={{ fontSize: "0.9rem" }}>
         <Link href="/history">Digests</Link>
         <span style={{ margin: "0 0.5rem" }}>/</span>
@@ -53,26 +58,31 @@ export default function DigestDetailPage() {
           </div>
         ) : (
           <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {items.map((item) => (
-              <li key={item._id}>
-                <DigestItemCard
-                  item={{
-                    _id: item._id,
-                    digestRunId: item.digestRunId,
-                    watchTargetId: item.watchTargetId,
-                    category: item.category,
-                    significance: item.significance,
-                    headline: item.headline,
-                    synthesis: item.synthesis,
-                    strategicImplication: item.strategicImplication,
-                    sources: item.sources,
-                    reviewedAt: item.reviewedAt,
-                    feedback: item.feedback,
-                    feedbackAt: item.feedbackAt,
-                  }}
-                />
-              </li>
-            ))}
+            {items.map((item) => {
+              const digestItem: DigestItem = {
+                _id: item._id,
+                digestRunId: item.digestRunId,
+                watchTargetId: item.watchTargetId,
+                category: item.category,
+                significance: item.significance,
+                headline: item.headline,
+                synthesis: item.synthesis,
+                strategicImplication: item.strategicImplication,
+                sources: item.sources,
+                rawItemIds: item.rawItemIds,
+                reviewedAt: item.reviewedAt,
+                feedback: item.feedback,
+                feedbackAt: item.feedbackAt,
+              };
+              return (
+                <li key={item._id}>
+                  <DigestItemCard
+                    item={digestItem}
+                    onOpenInOverlay={() => setOverlayItem(digestItem)}
+                  />
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

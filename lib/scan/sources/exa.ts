@@ -25,7 +25,9 @@ export async function runExa(
 
   try {
     for (const target of targets) {
-      const query = [target.name, ...target.aliases].slice(0, 3).join(" ");
+      const baseTerms = [target.name, ...target.aliases].slice(0, 3).join(" ");
+      const learned = (target.learnedQueryTerms ?? []).slice(0, 5).join(" ");
+      const query = learned ? `${baseTerms} ${learned}`.trim() : baseTerms;
       const res = await fetchWithRetry("https://api.exa.ai/search", {
         method: "POST",
         headers: {

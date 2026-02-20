@@ -148,7 +148,7 @@ function DashboardTargetRow({
           </div>
         ) : (
           <p className="muted" style={{ margin: 0, fontSize: "0.9rem", paddingLeft: "0.25rem" }}>
-            No digest yet for this target. Run a scan to generate one.
+            No digest yet for this watch target. Run a scan to generate one.
           </p>
         )}
       </div>
@@ -214,7 +214,7 @@ export default function DashboardPage() {
 
       <section className="summary-strip card" style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
         <span>
-          <strong>{targets!.length}</strong> <span className="muted">targets</span>
+          <strong>{targets!.length}</strong> <span className="muted">watch targets</span>
         </span>
         {latestDigest && !scanning && (
           <span>
@@ -235,7 +235,7 @@ export default function DashboardPage() {
               aria-hidden
             />
             <strong>
-              Scanning…{(scanningIds.size + scanningComprehensiveIds.size) > 1 ? ` ${scanningIds.size + scanningComprehensiveIds.size} targets` : ""}
+              Scanning…{(scanningIds.size + scanningComprehensiveIds.size) > 1 ? ` ${scanningIds.size + scanningComprehensiveIds.size} watch targets` : ""}
             </strong>
             <span className="muted">This may take a minute.</span>
           </span>
@@ -250,9 +250,9 @@ export default function DashboardPage() {
       </section>
 
       <section className="stack">
-        <h2 style={{ margin: 0 }}>Targets we&apos;re monitoring</h2>
+        <h2 style={{ margin: 0 }}>Watch targets we&apos;re monitoring</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Run a scan for a single target below, or <Link href="/targets">manage targets</Link>.
+          Run a scan for a single watch target below, or <Link href="/targets">manage Watch Targets</Link>.
         </p>
         <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {targets!.map((target) => (

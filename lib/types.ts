@@ -48,6 +48,7 @@ export type DigestItem = {
   synthesis: string;
   strategicImplication?: string;
   sources: DigestSourceRef[];
+  rawItemIds?: string[];
   reviewedAt?: number;
   feedback?: "good" | "bad";
   feedbackAt?: number;

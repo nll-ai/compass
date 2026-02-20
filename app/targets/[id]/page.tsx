@@ -7,6 +7,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { DigestItemCard } from "@/components/compass/DigestItemCard";
+import { SignalOverlay } from "@/components/compass/SignalOverlay";
+import type { DigestItem } from "@/lib/types";
 
 export default function TargetDetailPage() {
   const params = useParams();
@@ -17,6 +19,7 @@ export default function TargetDetailPage() {
   const [scanning, setScanning] = useState(false);
   const [scanningComprehensive, setScanningComprehensive] = useState(false);
   const [formCollapsed, setFormCollapsed] = useState(true);
+  const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -46,7 +49,7 @@ export default function TargetDetailPage() {
   if (target === undefined) {
     return (
       <div className="stack">
-        <h1>Target</h1>
+        <h1>Watch target</h1>
         <p className="muted">Loading…</p>
       </div>
     );
@@ -55,9 +58,9 @@ export default function TargetDetailPage() {
   if (target === null) {
     return (
       <div className="stack">
-        <h1>Target not found</h1>
-        <p className="muted">This target may have been removed.</p>
-        <Link href="/targets">← Back to targets</Link>
+        <h1>Watch target not found</h1>
+        <p className="muted">This watch target may have been removed.</p>
+        <Link href="/targets">← Back to Watch Targets</Link>
       </div>
     );
   }
@@ -83,8 +86,9 @@ export default function TargetDetailPage() {
 
   return (
     <div className="stack">
+      <SignalOverlay open={!!overlayItem} item={overlayItem} onClose={() => setOverlayItem(null)} />
       <nav className="muted" style={{ fontSize: "0.9rem" }}>
-        <Link href="/targets">Targets</Link>
+        <Link href="/targets">Watch Targets</Link>
         <span style={{ margin: "0 0.5rem" }}>/</span>
         {target.displayName}
       </nav>
@@ -201,7 +205,7 @@ export default function TargetDetailPage() {
             textAlign: "left",
           }}
         >
-          Edit target
+          Edit Watch Target
           <span aria-hidden style={{ transform: formCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s" }}>
             ▾
           </span>
@@ -325,7 +329,7 @@ export default function TargetDetailPage() {
       <section className="card stack">
         <h2 style={{ margin: 0 }}>Signals</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Digest signals for this target from past scans. Run a scan or comprehensive search to generate new ones.
+          Digest signals for this watch target from past scans. Run a scan or comprehensive search to generate new ones.
         </p>
         {signals === undefined ? (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
@@ -333,26 +337,31 @@ export default function TargetDetailPage() {
           <p className="muted" style={{ margin: 0 }}>No signals yet. Run a scan or comprehensive search above.</p>
         ) : (
           <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "1rem 0 0", gap: "0.75rem" }}>
-            {signals.map((item) => (
-              <li key={item._id}>
-                <DigestItemCard
-                  item={{
-                    _id: item._id,
-                    digestRunId: item.digestRunId,
-                    watchTargetId: item.watchTargetId,
-                    category: item.category,
-                    significance: item.significance,
-                    headline: item.headline,
-                    synthesis: item.synthesis,
-                    strategicImplication: item.strategicImplication,
-                    sources: item.sources,
-                    reviewedAt: item.reviewedAt,
-                    feedback: item.feedback,
-                    feedbackAt: item.feedbackAt,
-                  }}
-                />
-              </li>
-            ))}
+            {signals.map((item) => {
+              const digestItem: DigestItem = {
+                _id: item._id,
+                digestRunId: item.digestRunId,
+                watchTargetId: item.watchTargetId,
+                category: item.category,
+                significance: item.significance,
+                headline: item.headline,
+                synthesis: item.synthesis,
+                strategicImplication: item.strategicImplication,
+                sources: item.sources,
+                rawItemIds: item.rawItemIds,
+                reviewedAt: item.reviewedAt,
+                feedback: item.feedback,
+                feedbackAt: item.feedbackAt,
+              };
+              return (
+                <li key={item._id}>
+                  <DigestItemCard
+                    item={digestItem}
+                    onOpenInOverlay={() => setOverlayItem(digestItem)}
+                  />
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

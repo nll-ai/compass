@@ -16,6 +16,9 @@ export default defineSchema({
     ),
     active: v.boolean(),
     notes: v.optional(v.string()),
+    learnedQueryTerms: v.optional(v.array(v.string())),
+    excludeQueryTerms: v.optional(v.array(v.string())),
+    learnedTermsUpdatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -181,4 +184,47 @@ export default defineSchema({
     toolCalls: v.optional(v.any()),
     createdAt: v.number(),
   }).index("by_session", ["sessionId"]),
+
+  pageContentCache: defineTable({
+    url: v.string(),
+    formattedContent: v.string(),
+    fetchedAt: v.number(),
+  }).index("by_url", ["url"]),
+
+  /** User-configured scan schedule for all targets (singleton). */
+  scanSchedule: defineTable({
+    timezone: v.string(),
+    dailyEnabled: v.boolean(),
+    dailyHour: v.number(),
+    dailyMinute: v.number(),
+    weeklyEnabled: v.boolean(),
+    weeklyDayOfWeek: v.number(),
+    weeklyHour: v.number(),
+    weeklyMinute: v.number(),
+    weekdaysOnly: v.optional(v.boolean()),
+    rawDescription: v.optional(v.string()),
+    lastDailyRunDate: v.optional(v.string()),
+    lastWeeklyRunDate: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_updatedAt", ["updatedAt"]),
+
+  /** Per-watch-target scan schedule (one optional row per target). */
+  watchTargetSchedule: defineTable({
+    watchTargetId: v.id("watchTargets"),
+    timezone: v.string(),
+    dailyEnabled: v.boolean(),
+    dailyHour: v.number(),
+    dailyMinute: v.number(),
+    weeklyEnabled: v.boolean(),
+    weeklyDayOfWeek: v.number(),
+    weeklyHour: v.number(),
+    weeklyMinute: v.number(),
+    weekdaysOnly: v.optional(v.boolean()),
+    rawDescription: v.optional(v.string()),
+    lastDailyRunDate: v.optional(v.string()),
+    lastWeeklyRunDate: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_watchTarget", ["watchTargetId"])
+    .index("by_updatedAt", ["updatedAt"]),
 });

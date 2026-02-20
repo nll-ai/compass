@@ -20,7 +20,7 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
 
 ## Scan & digest pipeline
 
-- **Run a scan**: Dashboard "Run scan now", target detail "Run scan for this target", or Setup step 3. These call `POST /api/scan`, which runs all source scanners and digest generation **in your app** using keys from `.env.local` (so local dev works without Convex env vars).
+- **Run a scan**: Dashboard "Run scan now", watch target detail "Run scan for this watch target", or Setup step 3. These call `POST /api/scan`, which runs all source scanners and digest generation **in your app** using keys from `.env.local` (so local dev works without Convex env vars).
 - **Crons**: Optional (e.g. Vercel cron); can call `POST /api/scan` with `Authorization: Bearer <SCAN_SECRET>` and body `{ "period": "daily" }`.
 
 ### Manual scan (local dev)
@@ -47,7 +47,7 @@ Digest items and scan results include **links to original sources** (SEC filing,
 
 ### Scans show 0 items?
 
-- Ensure you have at least one **active watch target** (Setup or Targets).
+- Ensure you have at least one **active watch target** (Setup or Watch Targets).
 - **`.env.local`**: set `EXA_API_KEY` (and optionally `PUBMED_API_KEY`) so more sources return results. PubMed and ClinicalTrials work without keys and often return items.
 - First run often finds items; later runs dedupe by `externalId`, so "new" counts can be 0 if nothing new appeared.
 

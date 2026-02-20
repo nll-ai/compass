@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-crons.daily("daily-scan", { hourUTC: 8, minuteUTC: 0 }, internal.scans.scheduleScan, { period: "daily" });
-crons.weekly("weekly-scan", { dayOfWeek: "monday", hourUTC: 8, minuteUTC: 0 }, internal.scans.scheduleScan, { period: "weekly" });
+// Check user-configured schedule every 15 minutes; triggers daily/weekly when due
+crons.interval("check-scan-schedule", { minutes: 15 }, internal.scanSchedule.checkAndTrigger);
 
 export default crons;

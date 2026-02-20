@@ -15,7 +15,9 @@ export async function runClinicalTrials(
 
   try {
     for (const target of targets) {
-      const query = [target.name, ...target.aliases].slice(0, 3).join(" ");
+      const baseTerms = [target.name, ...target.aliases].slice(0, 3);
+      const learned = (target.learnedQueryTerms ?? []).slice(0, 3);
+      const query = [...baseTerms, ...learned].filter(Boolean).join(" ").trim() || target.name;
       const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(query)}&pageSize=${pageSize}`;
       const res = await fetchWithRetry(url);
       if (!res.ok) {
