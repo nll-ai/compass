@@ -106,13 +106,29 @@ export default function TargetDetailPage() {
             padding: "0.5rem 1rem",
             borderRadius: 8,
             border: "none",
-            background: "#111827",
+            background: scanning ? "#6b7280" : "#111827",
             color: "white",
             fontWeight: 600,
             cursor: scanning ? "wait" : "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.5rem",
           }}
         >
-          {scanning ? "Starting scan…" : "Run scan for this target"}
+          {scanning && (
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                border: "2px solid rgba(255,255,255,0.3)",
+                borderTopColor: "white",
+                borderRadius: "50%",
+                animation: "scan-spin 0.7s linear infinite",
+              }}
+              aria-hidden
+            />
+          )}
+          {scanning ? "Scanning…" : "Run scan for this target"}
         </button>
         <Link href="/" className="muted" style={{ fontSize: "0.9rem" }}>
           View recent scans on Dashboard →

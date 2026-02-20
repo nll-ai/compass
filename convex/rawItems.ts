@@ -8,6 +8,7 @@ const sourceValidator = v.union(
   v.literal("exa"),
   v.literal("openfda"),
   v.literal("rss"),
+  v.literal("patents"),
 );
 
 const rawItemInputValidator = v.object({

@@ -40,3 +40,9 @@ a {
 .muted {
   color: #6b7280;
 }
+
+@keyframes scan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

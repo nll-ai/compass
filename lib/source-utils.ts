@@ -8,6 +8,7 @@ export function sourceLabel(source: SourceType): string {
     exa: "Exa AI",
     openfda: "openFDA",
     rss: "RSS",
+    patents: "Patents",
   };
   return labels[source];
 }

@@ -4,15 +4,122 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { DigestSummaryCard } from "@/components/compass/DigestSummaryCard";
 import { formatDate } from "@/lib/formatters";
+
+function DashboardTargetRow({
+  target,
+  isScanning,
+  onRunScan,
+  setScanError,
+}: {
+  target: { _id: Id<"watchTargets">; displayName: string };
+  isScanning: boolean;
+  onRunScan: () => Promise<void>;
+  setScanError: (msg: string | null) => void;
+}) {
+  const latestDigest = useQuery(api.digestRuns.getLatestForTarget, { watchTargetId: target._id });
+  return (
+    <li>
+      <div className="stack" style={{ gap: "0.75rem" }}>
+        <div
+          className="card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "1rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <Link
+            href={`/targets/${target._id}`}
+            style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          >
+            {target.displayName}
+          </Link>
+          <button
+            type="button"
+            disabled={isScanning}
+            onClick={async () => {
+              setScanError(null);
+              await onRunScan();
+            }}
+            style={{
+              padding: "0.4rem 0.75rem",
+              borderRadius: 8,
+              border: "none",
+              background: isScanning ? "#6b7280" : "#111827",
+              color: "white",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              cursor: isScanning ? "wait" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+            }}
+          >
+            {isScanning && (
+              <span
+                style={{
+                  width: 12,
+                  height: 12,
+                  border: "2px solid rgba(255,255,255,0.3)",
+                  borderTopColor: "white",
+                  borderRadius: "50%",
+                  animation: "scan-spin 0.7s linear infinite",
+                }}
+                aria-hidden
+              />
+            )}
+            {isScanning ? "Scanning…" : "Run scan"}
+          </button>
+        </div>
+        {latestDigest === undefined ? (
+          <p className="muted" style={{ margin: 0, fontSize: "0.9rem", paddingLeft: "0.25rem" }}>
+            Loading…
+          </p>
+        ) : latestDigest ? (
+          <div style={{ paddingLeft: "0.5rem", borderLeft: "3px solid #e5e7eb" }}>
+            <DigestSummaryCard
+              digest={{
+                _id: latestDigest._id,
+                period: latestDigest.period,
+                generatedAt: latestDigest.generatedAt,
+                executiveSummary: latestDigest.executiveSummary,
+                totalSignals: latestDigest.totalSignals,
+                criticalCount: latestDigest.criticalCount,
+                highCount: latestDigest.highCount,
+                mediumCount: latestDigest.mediumCount,
+                lowCount: latestDigest.lowCount,
+              }}
+            />
+            <Link
+              href={`/digest/${latestDigest._id}`}
+              className="muted"
+              style={{ fontSize: "0.85rem" }}
+            >
+              View full digest →
+            </Link>
+          </div>
+        ) : (
+          <p className="muted" style={{ margin: 0, fontSize: "0.9rem", paddingLeft: "0.25rem" }}>
+            No digest yet for this target. Run a scan to generate one.
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
 
 export default function DashboardPage() {
   const targets = useQuery(api.watchTargets.listActive);
   const latestDigests = useQuery(api.digestRuns.listRecent, { limit: 1 });
   const recentScans = useQuery(api.scans.listRecent, { limit: 7 });
-  const [scanning, setScanning] = useState(false);
+  const [scanningIds, setScanningIds] = useState<Set<Id<"watchTargets">>>(new Set());
   const [scanError, setScanError] = useState<string | null>(null);
+  const scanning = scanningIds.size > 0;
 
   const isLoading = targets === undefined;
   const hasTargets = Array.isArray(targets) && targets.length > 0;
@@ -65,71 +172,94 @@ export default function DashboardPage() {
         <span>
           <strong>{targets!.length}</strong> <span className="muted">targets</span>
         </span>
-        {latestDigest && (
+        {latestDigest && !scanning && (
           <span>
             <strong>{latestDigest.totalSignals}</strong> <span className="muted">signals in latest digest</span>
           </span>
         )}
-        {scans.length > 0 && (
+        {scanning ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+            <span
+              style={{
+                width: 18,
+                height: 18,
+                border: "2px solid #e5e7eb",
+                borderTopColor: "#111827",
+                borderRadius: "50%",
+                animation: "scan-spin 0.7s linear infinite",
+              }}
+              aria-hidden
+            />
+            <strong>
+              Scanning…{scanningIds.size > 1 ? ` ${scanningIds.size} targets` : ""}
+            </strong>
+            <span className="muted">This may take a minute.</span>
+          </span>
+        ) : scans.length > 0 ? (
           <span className="muted">
             Last scan: {formatDate(scans[0].scheduledFor)} — {scans[0].status}
           </span>
-        )}
-        {scanError && (
+        ) : null}
+        {scanError && !scanning && (
           <p style={{ color: "#b91c1c", margin: 0, fontSize: "0.9rem" }}>{scanError}</p>
         )}
-        <button
-          type="button"
-          onClick={async () => {
-            setScanning(true);
-            setScanError(null);
-            try {
-              const res = await fetch("/api/scan", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ period: "daily" }),
-              });
-              const text = await res.text();
-              let errBody: { error?: string };
-              if (text) {
+      </section>
+
+      <section className="stack">
+        <h2 style={{ margin: 0 }}>Targets we&apos;re monitoring</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Run a scan for a single target below, or <Link href="/targets">manage targets</Link>.
+        </p>
+        <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {targets!.map((target) => (
+            <DashboardTargetRow
+              key={target._id}
+              target={target}
+              isScanning={scanningIds.has(target._id)}
+              setScanError={setScanError}
+              onRunScan={async () => {
+                setScanningIds((prev) => new Set(prev).add(target._id));
                 try {
-                  errBody = JSON.parse(text) as { error?: string };
-                } catch {
-                  errBody = { error: text };
+                  const res = await fetch("/api/scan", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ period: "daily", targetIds: [target._id] }),
+                  });
+                  const text = await res.text();
+                  let errBody: { error?: string };
+                  if (text) {
+                    try {
+                      errBody = JSON.parse(text) as { error?: string };
+                    } catch {
+                      errBody = { error: text };
+                    }
+                  } else {
+                    errBody = { error: res.statusText };
+                  }
+                  if (!res.ok) {
+                    let msg = errBody.error ?? res.statusText ?? `HTTP ${res.status}`;
+                    if (msg.includes("Unauthorized")) {
+                      msg =
+                        "Convex rejected the scan secret. Set SCAN_SECRET in Convex to match .env.local: run npx convex env set SCAN_SECRET \"your-secret\" (use the same value as in .env.local).";
+                    }
+                    setScanError(msg);
+                    console.error("Scan failed:", res.status, msg, text.slice(0, 200));
+                  }
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  setScanError(msg);
+                  console.error("Scan request failed:", e);
+                } finally {
+                  setScanningIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(target._id);
+                    return next;
+                  });
                 }
-              } else {
-                errBody = { error: res.statusText };
-              }
-              if (!res.ok) {
-                let msg = errBody.error ?? res.statusText ?? `HTTP ${res.status}`;
-                if (msg.includes("Unauthorized")) {
-                  msg = "Convex rejected the scan secret. Set SCAN_SECRET in Convex to match .env.local: run npx convex env set SCAN_SECRET \"your-secret\" (use the same value as in .env.local).";
-                }
-                setScanError(msg);
-                console.error("Scan failed:", res.status, msg, text.slice(0, 200));
-              }
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              setScanError(msg);
-              console.error("Scan request failed:", e);
-            } finally {
-              setScanning(false);
-            }
-          }}
-          disabled={scanning}
-          style={{
-            marginLeft: "auto",
-            padding: "0.5rem 1rem",
-            borderRadius: 8,
-            border: "none",
-            background: "#111827",
-            color: "white",
-            fontWeight: 600,
-            cursor: scanning ? "wait" : "pointer",
-          }}
-        >
-          {scanning ? "Starting…" : "Run scan now"}
-        </button>
+              }}
+            />
+          ))}
+        </ul>
       </section>
 
       <section className="stack">
@@ -166,28 +296,6 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <section className="stack">
-        <h2 style={{ margin: 0 }}>Recent scans</h2>
-        {scans.length === 0 ? (
-          <div className="card">
-            <p className="muted" style={{ margin: 0 }}>No scans yet.</p>
-          </div>
-        ) : (
-          <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {scans.map((scan) => (
-              <li key={scan._id}>
-                <Link
-                  href="/history"
-                  className="card"
-                  style={{ display: "block", textDecoration: "none", color: "inherit" }}
-                >
-                  {formatDate(scan.scheduledFor)} — {scan.status} · {scan.newItemsFound} new
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

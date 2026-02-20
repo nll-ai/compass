@@ -10,17 +10,23 @@ export default function SetupPage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const targets = useQuery(api.watchTargets.listActive);
   const [scanTriggered, setScanTriggered] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const hasTargets = Array.isArray(targets) && targets.length > 0;
   const targetCount = Array.isArray(targets) ? targets.length : 0;
 
   const handleRunFirstScan = async () => {
-    await fetch("/api/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ period: "daily" }),
-    });
-    setScanTriggered(true);
+    setScanning(true);
+    try {
+      await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: "daily" }),
+      });
+      setScanTriggered(true);
+    } finally {
+      setScanning(false);
+    }
   };
 
   const primaryButton = {
@@ -92,8 +98,34 @@ export default function SetupPage() {
             We'll create a scan run for {targetCount} target(s). Source scanners will be wired in a later phase; for now this creates the run record.
           </p>
           {!scanTriggered ? (
-            <button type="button" onClick={handleRunFirstScan} style={{ ...primaryButton, alignSelf: "flex-start" }}>
-              Run first scan
+            <button
+              type="button"
+              onClick={handleRunFirstScan}
+              disabled={scanning}
+              style={{
+                ...primaryButton,
+                alignSelf: "flex-start",
+                background: scanning ? "#6b7280" : primaryButton.background,
+                cursor: scanning ? "wait" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+            >
+              {scanning && (
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    border: "2px solid rgba(255,255,255,0.3)",
+                    borderTopColor: "white",
+                    borderRadius: "50%",
+                    animation: "scan-spin 0.7s linear infinite",
+                  }}
+                  aria-hidden
+                />
+              )}
+              {scanning ? "Scanning…" : "Run first scan"}
             </button>
           ) : (
             <p className="muted" style={{ margin: 0 }}>

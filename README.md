@@ -29,6 +29,7 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
    - `OPENAI_API_KEY` – for digest generation (LLM summary).
    - `EXA_API_KEY` – optional; adds web-search results from Exa (otherwise Exa returns 0 items).
    - `PUBMED_API_KEY` – optional; higher PubMed rate limit.
+   - `PATENTSVIEW_API_KEY` – optional; [PatentsView](https://patentsview.org/) API key for US patent search (request via their help center).
 2. Run `npm run dev` and open the app. Click **Run scan now** on the dashboard. The scan runs in your Next.js server and uses the keys above; results show up in the dashboard.
 
 ### Sources (what actually runs)
@@ -37,8 +38,12 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
 |-------------------|-------|--------|
 | PubMed           | Yes   | No key = 3 req/s; add `PUBMED_API_KEY` for 10 req/s. |
 | ClinicalTrials.gov| Yes   | No API key needed. |
+| SEC EDGAR         | Yes   | 10-K/10-Q filings; matches targets by company name/ticker via SEC company list (no key). |
 | Exa              | Yes   | Add `EXA_API_KEY` in `.env.local` to get web results; otherwise 0 items. |
-| EDGAR, openFDA, RSS | Stubbed | Return 0 items until implemented. |
+| Patents           | Yes   | Add `PATENTSVIEW_API_KEY` for US patent search; otherwise 0 items. |
+| openFDA, RSS      | Stubbed | Return 0 items until implemented. |
+
+Digest items and scan results include **links to original sources** (SEC filing, patent, PubMed, trial, etc.) so you can open the source in one click.
 
 ### Scans show 0 items?
 

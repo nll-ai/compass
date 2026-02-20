@@ -5,8 +5,9 @@ import { runExa } from "./exa";
 import { runEdgar } from "./edgar";
 import { runOpenFda } from "./openfda";
 import { runRss } from "./rss";
+import { runPatents } from "./patents";
 
-export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss";
+export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
 
 const SOURCES: Array<{
   name: SourceName;
@@ -14,10 +15,11 @@ const SOURCES: Array<{
 }> = [
   { name: "pubmed", run: (t, e) => runPubmed(t, e) },
   { name: "clinicaltrials", run: (t) => runClinicalTrials(t) },
-  { name: "edgar", run: () => runEdgar() },
+  { name: "edgar", run: (t) => runEdgar(t) },
   { name: "exa", run: (t, e) => runExa(t, e) },
   { name: "openfda", run: () => runOpenFda() },
   { name: "rss", run: () => runRss() },
+  { name: "patents", run: (t, e) => runPatents(t, e) },
 ];
 
 export async function runAllSources(

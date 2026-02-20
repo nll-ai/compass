@@ -5,7 +5,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { runAllSources, type SourceName } from "../../../lib/scan/sources";
 import { generateDigest } from "../../../lib/scan/digest";
 
-const SOURCES: SourceName[] = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss"];
+const SOURCES: SourceName[] = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"];
 
 function getSecret(): string | undefined {
   return process.env.SCAN_SECRET;
@@ -90,6 +90,7 @@ export async function POST(request: Request) {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     EXA_API_KEY: process.env.EXA_API_KEY,
     PUBMED_API_KEY: process.env.PUBMED_API_KEY,
+    PATENTSVIEW_API_KEY: process.env.PATENTSVIEW_API_KEY,
   };
 
   await client.mutation(api.scans.updateScanStatusFromServer, {

@@ -68,6 +68,7 @@ export default defineSchema({
       v.literal("exa"),
       v.literal("openfda"),
       v.literal("rss"),
+      v.literal("patents"),
     ),
     externalId: v.string(),
     title: v.string(),

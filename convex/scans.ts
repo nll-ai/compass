@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
-const SOURCES = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss"] as const;
+const SOURCES = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"] as const;
 const SOURCES_TOTAL = SOURCES.length;
 
 function checkScanSecret(secret: string): boolean {
@@ -263,5 +263,23 @@ export const callScanApi = internalAction({
       const text = await res.text();
       console.error("callScanApi failed:", res.status, text);
     }
+  },
+});
+
+export const clearAllScanData = mutation({
+  args: { secret: v.string() },
+  handler: async (ctx, { secret }) => {
+    if (!checkScanSecret(secret)) throw new Error("Unauthorized");
+    const digestItems = await ctx.db.query("digestItems").collect();
+    for (const d of digestItems) await ctx.db.delete(d._id);
+    const digestRuns = await ctx.db.query("digestRuns").collect();
+    for (const d of digestRuns) await ctx.db.delete(d._id);
+    const rawItems = await ctx.db.query("rawItems").collect();
+    for (const r of rawItems) await ctx.db.delete(r._id);
+    const sourceStatuses = await ctx.db.query("scanSourceStatus").collect();
+    for (const s of sourceStatuses) await ctx.db.delete(s._id);
+    const runs = await ctx.db.query("scanRuns").collect();
+    for (const r of runs) await ctx.db.delete(r._id);
+    return { deleted: { digestItems: digestItems.length, digestRuns: digestRuns.length, rawItems: rawItems.length, scanSourceStatus: sourceStatuses.length, scanRuns: runs.length } };
   },
 });

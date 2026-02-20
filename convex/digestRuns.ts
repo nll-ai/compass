@@ -19,3 +19,25 @@ export const get = query({
     return await ctx.db.get(id);
   },
 });
+
+export const getLatestForTarget = query({
+  args: { watchTargetId: v.id("watchTargets") },
+  handler: async (ctx, { watchTargetId }) => {
+    const items = await ctx.db
+      .query("digestItems")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
+      .take(100);
+    if (items.length === 0) return null;
+    const runIds = [...new Set(items.map((i) => i.digestRunId))];
+    let latest: Awaited<ReturnType<typeof ctx.db.get>> = null;
+    let latestAt = 0;
+    for (const id of runIds) {
+      const run = await ctx.db.get(id);
+      if (run && run.generatedAt > latestAt) {
+        latestAt = run.generatedAt;
+        latest = run;
+      }
+    }
+    return latest;
+  },
+});

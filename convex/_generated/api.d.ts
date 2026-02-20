@@ -24,6 +24,7 @@ import type * as sources_clinicaltrials from "../sources/clinicaltrials.js";
 import type * as sources_edgar from "../sources/edgar.js";
 import type * as sources_exa from "../sources/exa.js";
 import type * as sources_openfda from "../sources/openfda.js";
+import type * as sources_patents from "../sources/patents.js";
 import type * as sources_pubmed from "../sources/pubmed.js";
 import type * as sources_rss from "../sources/rss.js";
 import type * as watchTargets from "../watchTargets.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "sources/edgar": typeof sources_edgar;
   "sources/exa": typeof sources_exa;
   "sources/openfda": typeof sources_openfda;
+  "sources/patents": typeof sources_patents;
   "sources/pubmed": typeof sources_pubmed;
   "sources/rss": typeof sources_rss;
   watchTargets: typeof watchTargets;

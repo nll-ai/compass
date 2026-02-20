@@ -1,6 +1,6 @@
 import type { Id } from "../../convex/_generated/dataModel";
 
-export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss";
+export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
 
 export interface ScanTarget {
   _id: Id<"watchTargets">;
