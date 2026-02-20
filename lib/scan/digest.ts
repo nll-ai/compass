@@ -36,6 +36,12 @@ export interface DigestPayload {
   items: DigestItemPayload[];
 }
 
+/** User feedback from past digest items, used to tune the prompt. */
+export interface FeedbackContext {
+  good: Array<{ headline: string; synthesis: string }>;
+  bad: Array<{ headline: string; synthesis: string }>;
+}
+
 function isCategory(c: string): c is Category {
   return CATEGORIES.includes(c as Category);
 }
@@ -47,7 +53,8 @@ export async function generateDigest(
   newItems: NewRawItem[],
   period: "daily" | "weekly",
   targetNames: Map<Id<"watchTargets">, string>,
-  openaiKey: string | undefined
+  openaiKey: string | undefined,
+  feedbackContext?: FeedbackContext
 ): Promise<DigestPayload> {
   const targetMap = new Map<string, Id<"watchTargets">>();
   targetNames.forEach((name, id) => targetMap.set(name, id));
@@ -84,7 +91,21 @@ export async function generateDigest(
     };
   }
 
-  const prompt = `You are a competitive intelligence analyst for biopharma. Given the following new items from a scan, produce a structured digest.
+  const good = feedbackContext?.good ?? [];
+  const bad = feedbackContext?.bad ?? [];
+  const hasFeedback = good.length > 0 || bad.length > 0;
+  const feedbackBlock = hasFeedback
+    ? `
+
+Learn from user feedback. Users marked these digest items as RELEVANT (emulate this style and relevance):
+${good.slice(0, 10).map((g) => `- "${g.headline}" / ${(g.synthesis ?? "").slice(0, 120)}...`).join("\n")}
+
+Users marked these as NOT RELEVANT (avoid similar; e.g. wrong therapeutic context, plant/agricultural when human/cardio/oncology is intended, or noise):
+${bad.slice(0, 10).map((b) => `- "${b.headline}" / ${(b.synthesis ?? "").slice(0, 120)}...`).join("\n")}
+`
+      : "";
+
+  const prompt = `You are a competitive intelligence analyst for biopharma. Given the following new items from a scan, produce a structured digest.${feedbackBlock}
 
 Today's date: ${new Date().toISOString().split("T")[0]}
 Period: ${period}

@@ -1,4 +1,5 @@
-import type { ScanTarget, SourceResult } from "../types";
+import type { ScanTarget, SourceResult, ScanOptions } from "../types";
+import { fetchWithRetry } from "../fetchWithRetry";
 
 const SEC_USER_AGENT = "Compass competitive intelligence app (contact via GitHub)";
 
@@ -24,10 +25,25 @@ function accessionToPath(acc: string): string {
   return acc.replace(/-/g, "");
 }
 
-export async function runEdgar(targets: ScanTarget[]): Promise<SourceResult> {
+function getCompaniesLimit(options?: ScanOptions): number {
+  return options?.mode === "comprehensive" ? 10 : 5;
+}
+
+function getFilingsLimit(options?: ScanOptions): number {
+  return options?.mode === "comprehensive" ? 50 : 20;
+}
+
+export async function runEdgar(
+  targets: ScanTarget[],
+  _env: Record<string, string | undefined>,
+  options?: ScanOptions
+): Promise<SourceResult> {
   const items: SourceResult["items"] = [];
+  const companiesLimit = getCompaniesLimit(options);
+  const filingsLimit = getFilingsLimit(options);
+
   try {
-    const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
+    const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
       headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" },
     });
     if (!res.ok) return { items: [], error: `SEC company list: ${res.status}` };
@@ -47,10 +63,10 @@ export async function runEdgar(targets: ScanTarget[]): Promise<SourceResult> {
         return searchTerms.some((t) => title.includes(t) || ticker === t || title === t);
       });
 
-      for (const company of matches.slice(0, 5)) {
+      for (const company of matches.slice(0, companiesLimit)) {
         const cik = company.cik_str;
         const cikPadded = padCik(cik);
-        const subRes = await fetch(
+        const subRes = await fetchWithRetry(
           `https://data.sec.gov/submissions/CIK${cikPadded}.json`,
           { headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" } }
         );
@@ -67,7 +83,7 @@ export async function runEdgar(targets: ScanTarget[]): Promise<SourceResult> {
         const dates = (recent.filingDate as string[]) ?? [];
         const primaries = (recent.primaryDocument as string[]) ?? [];
 
-        for (let i = 0; i < Math.min(forms.length, 20); i++) {
+        for (let i = 0; i < Math.min(forms.length, filingsLimit); i++) {
           if (!formsWeWant.includes(forms[i])) continue;
           const acc = accessions[i];
           if (!acc || seenAccessions.has(acc)) continue;

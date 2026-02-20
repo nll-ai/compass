@@ -67,6 +67,8 @@ export default function DigestDetailPage() {
                     strategicImplication: item.strategicImplication,
                     sources: item.sources,
                     reviewedAt: item.reviewedAt,
+                    feedback: item.feedback,
+                    feedbackAt: item.feedbackAt,
                   }}
                 />
               </li>

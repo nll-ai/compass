@@ -1,13 +1,29 @@
-import type { ScanTarget, SourceResult } from "../types";
+import type { ScanTarget, SourceResult, ScanOptions } from "../types";
+import { fetchWithRetry } from "../fetchWithRetry";
 
-export async function runClinicalTrials(targets: ScanTarget[]): Promise<SourceResult> {
+function getPageSize(options?: ScanOptions): number {
+  return options?.mode === "comprehensive" ? 25 : 5;
+}
+
+export async function runClinicalTrials(
+  targets: ScanTarget[],
+  _env: Record<string, string | undefined>,
+  options?: ScanOptions
+): Promise<SourceResult> {
   const items: SourceResult["items"] = [];
+  const pageSize = getPageSize(options);
+
   try {
     for (const target of targets) {
       const query = [target.name, ...target.aliases].slice(0, 3).join(" ");
-      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(query)}&pageSize=5`;
-      const res = await fetch(url);
-      if (!res.ok) continue;
+      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(query)}&pageSize=${pageSize}`;
+      const res = await fetchWithRetry(url);
+      if (!res.ok) {
+        if (items.length > 0) {
+          return { items, error: `ClinicalTrials: ${res.status}` };
+        }
+        return { items: [], error: `ClinicalTrials: ${res.status}` };
+      }
       const data = (await res.json()) as {
         studies?: Array<{
           protocolSection?: { identificationModule?: { nctId?: string; briefTitle?: string } };
@@ -29,6 +45,6 @@ export async function runClinicalTrials(targets: ScanTarget[]): Promise<SourceRe
     }
     return { items };
   } catch (err) {
-    return { items: [], error: err instanceof Error ? err.message : String(err) };
+    return { items, error: err instanceof Error ? err.message : String(err) };
   }
 }

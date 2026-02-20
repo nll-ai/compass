@@ -116,3 +116,15 @@ export const getNewByScanRunFromServer = query({
       .collect();
   },
 });
+
+/** List stored scan results (raw items) for a watch target, newest first. */
+export const listByWatchTarget = query({
+  args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
+  handler: async (ctx, { watchTargetId, limit = 100 }) => {
+    return await ctx.db
+      .query("rawItems")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
+      .order("desc")
+      .take(limit);
+  },
+});

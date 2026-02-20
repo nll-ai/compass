@@ -49,6 +49,8 @@ export type DigestItem = {
   strategicImplication?: string;
   sources: DigestSourceRef[];
   reviewedAt?: number;
+  feedback?: "good" | "bad";
+  feedbackAt?: number;
 };
 
 export type DigestRun = {

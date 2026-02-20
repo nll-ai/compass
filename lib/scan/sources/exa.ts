@@ -1,29 +1,50 @@
-import type { ScanTarget, SourceResult } from "../types";
+import type { ScanTarget, SourceResult, ScanOptions } from "../types";
+import { fetchWithRetry } from "../fetchWithRetry";
+
+function getNumResults(options?: ScanOptions): number {
+  return options?.mode === "comprehensive" ? 18 : 5;
+}
+
+/** Scope Exa query to human/biopharma context; avoids plant/agricultural results. */
+function scopeExaQuery(query: string, target: ScanTarget): string {
+  const base = `${query} biopharma drug development clinical`;
+  if (target.therapeuticArea === "cardiovascular") return `${base} cardiovascular heart human`;
+  if (target.therapeuticArea === "oncology") return `${base} oncology cancer human`;
+  return base;
+}
 
 export async function runExa(
   targets: ScanTarget[],
-  env: { EXA_API_KEY?: string }
+  env: { EXA_API_KEY?: string },
+  options?: ScanOptions
 ): Promise<SourceResult> {
   const apiKey = env.EXA_API_KEY;
   if (!apiKey) return { items: [] };
   const items: SourceResult["items"] = [];
+  const numResults = getNumResults(options);
+
   try {
     for (const target of targets) {
       const query = [target.name, ...target.aliases].slice(0, 3).join(" ");
-      const res = await fetch("https://api.exa.ai/search", {
+      const res = await fetchWithRetry("https://api.exa.ai/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
         body: JSON.stringify({
-          query: `${query} biopharma drug development clinical`,
-          numResults: 5,
+          query: scopeExaQuery(query, target),
+          numResults,
           type: "auto",
           contents: { text: { maxCharacters: 500 } },
         }),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (items.length > 0) {
+          return { items, error: `Exa: ${res.status}` };
+        }
+        return { items: [], error: `Exa: ${res.status}` };
+      }
       const data = (await res.json()) as {
         results?: Array<{ id: string; title?: string; url?: string; text?: string }>;
       };
@@ -43,6 +64,6 @@ export async function runExa(
     }
     return { items };
   } catch (err) {
-    return { items: [], error: err instanceof Error ? err.message : String(err) };
+    return { items, error: err instanceof Error ? err.message : String(err) };
   }
 }

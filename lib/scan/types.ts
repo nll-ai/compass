@@ -2,11 +2,23 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
 
+export type ScanMode = "latest" | "comprehensive";
+
+export interface ScanOptions {
+  mode: ScanMode;
+}
+
+export type TherapeuticArea = "cardiovascular" | "oncology" | "other";
+
 export interface ScanTarget {
   _id: Id<"watchTargets">;
   name: string;
   displayName: string;
   aliases: string[];
+  therapeuticArea?: TherapeuticArea;
+  type?: "drug" | "target" | "company";
+  indication?: string;
+  company?: string;
 }
 
 export interface RawItemInput {

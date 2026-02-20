@@ -6,13 +6,17 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
+import { DigestItemCard } from "@/components/compass/DigestItemCard";
 
 export default function TargetDetailPage() {
   const params = useParams();
   const id = params.id as Id<"watchTargets">;
   const target = useQuery(api.watchTargets.get, { id });
+  const signals = useQuery(api.digestItems.listByWatchTarget, { watchTargetId: id, limit: 60 });
   const updateTarget = useMutation(api.watchTargets.update);
   const [scanning, setScanning] = useState(false);
+  const [scanningComprehensive, setScanningComprehensive] = useState(false);
+  const [formCollapsed, setFormCollapsed] = useState(true);
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -128,14 +132,82 @@ export default function TargetDetailPage() {
               aria-hidden
             />
           )}
-          {scanning ? "Scanning…" : "Run scan for this target"}
+          {scanning ? "Scanning…" : "Run scan"}
+        </button>
+        <button
+          type="button"
+          disabled={scanningComprehensive}
+          onClick={async () => {
+            setScanningComprehensive(true);
+            try {
+              await fetch("/api/scan", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ period: "daily", targetIds: [id], mode: "comprehensive" }),
+              });
+            } finally {
+              setScanningComprehensive(false);
+            }
+          }}
+          style={{
+            padding: "0.5rem 1rem",
+            borderRadius: 8,
+            border: "1px solid #374151",
+            background: scanningComprehensive ? "#6b7280" : "transparent",
+            color: "#374151",
+            fontWeight: 600,
+            cursor: scanningComprehensive ? "wait" : "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+          title="May take 1–2 minutes"
+        >
+          {scanningComprehensive && (
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                border: "2px solid rgba(55,65,81,0.3)",
+                borderTopColor: "#374151",
+                borderRadius: "50%",
+                animation: "scan-spin 0.7s linear infinite",
+              }}
+              aria-hidden
+            />
+          )}
+          {scanningComprehensive ? "Running…" : "Run comprehensive search"}
         </button>
         <Link href="/" className="muted" style={{ fontSize: "0.9rem" }}>
           View recent scans on Dashboard →
         </Link>
       </div>
 
-      <form onSubmit={handleSave} className="card stack">
+      <section className="card stack">
+        <button
+          type="button"
+          onClick={() => setFormCollapsed((c) => !c)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            padding: 0,
+            border: "none",
+            background: "none",
+            cursor: "pointer",
+            fontSize: "1rem",
+            fontWeight: 600,
+            textAlign: "left",
+          }}
+        >
+          Edit target
+          <span aria-hidden style={{ transform: formCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s" }}>
+            ▾
+          </span>
+        </button>
+        {!formCollapsed && (
+      <form onSubmit={handleSave} className="stack" style={{ marginTop: "1rem" }}>
         <label>
           <span className="muted" style={{ fontSize: "0.85rem" }}>Name</span>
           <input
@@ -247,12 +319,42 @@ export default function TargetDetailPage() {
           {saved ? "Saved" : "Save changes"}
         </button>
       </form>
+        )}
+      </section>
 
       <section className="card stack">
-        <h2 style={{ margin: 0 }}>Signal history</h2>
+        <h2 style={{ margin: 0 }}>Signals</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Digest items for this target will appear here once scans and digest generation are wired.
+          Digest signals for this target from past scans. Run a scan or comprehensive search to generate new ones.
         </p>
+        {signals === undefined ? (
+          <p className="muted" style={{ margin: 0 }}>Loading…</p>
+        ) : signals.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No signals yet. Run a scan or comprehensive search above.</p>
+        ) : (
+          <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "1rem 0 0", gap: "0.75rem" }}>
+            {signals.map((item) => (
+              <li key={item._id}>
+                <DigestItemCard
+                  item={{
+                    _id: item._id,
+                    digestRunId: item.digestRunId,
+                    watchTargetId: item.watchTargetId,
+                    category: item.category,
+                    significance: item.significance,
+                    headline: item.headline,
+                    synthesis: item.synthesis,
+                    strategicImplication: item.strategicImplication,
+                    sources: item.sources,
+                    reviewedAt: item.reviewedAt,
+                    feedback: item.feedback,
+                    feedbackAt: item.feedbackAt,
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

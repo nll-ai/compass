@@ -132,6 +132,8 @@ export default defineSchema({
       }),
     ),
     reviewedAt: v.optional(v.number()),
+    feedback: v.optional(v.union(v.literal("good"), v.literal("bad"))),
+    feedbackAt: v.optional(v.number()),
   })
     .index("by_digestRun", ["digestRunId"])
     .index("by_watchTarget", ["watchTargetId"])

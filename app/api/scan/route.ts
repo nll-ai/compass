@@ -4,8 +4,12 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { runAllSources, type SourceName } from "../../../lib/scan/sources";
 import { generateDigest } from "../../../lib/scan/digest";
+import type { ScanOptions } from "../../../lib/scan/types";
 
 const SOURCES: SourceName[] = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"];
+
+/** Allow long comprehensive runs (Vercel Pro supports up to 300s per route). */
+export const maxDuration = 300;
 
 function getSecret(): string | undefined {
   return process.env.SCAN_SECRET;
@@ -44,16 +48,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "NEXT_PUBLIC_CONVEX_URL not configured" }, { status: 500 });
     }
 
-    let body: { scanRunId?: string; period: "daily" | "weekly"; targetIds?: string[] };
+    let body: {
+      scanRunId?: string;
+      period: "daily" | "weekly";
+      targetIds?: string[];
+      mode?: "latest" | "comprehensive";
+    };
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const { scanRunId: bodyScanRunId, period, targetIds } = body;
+    const { scanRunId: bodyScanRunId, period, targetIds, mode } = body;
     if (!period || (period !== "daily" && period !== "weekly")) {
       return NextResponse.json({ error: "period required: daily | weekly" }, { status: 400 });
     }
+    const scanMode = mode === "comprehensive" ? "comprehensive" : "latest";
+    const scanOptions: ScanOptions = { mode: scanMode };
 
     const client = new ConvexHttpClient(convexUrl);
 
@@ -100,7 +111,7 @@ export async function POST(request: Request) {
     startedAt: Date.now(),
   });
 
-  const sourceResults = await runAllSources(targets, env);
+  const sourceResults = await runAllSources(targets, env, scanOptions);
 
   let totalFound = 0;
   let newFound = 0;
@@ -158,11 +169,13 @@ export async function POST(request: Request) {
   if (newFound > 0 || scan?.period === "weekly") {
     const newItems = await client.query(api.rawItems.getNewByScanRunFromServer, { secret: effectiveSecret, scanRunId });
     const targetNames = new Map(targets.map((t) => [t._id, t.displayName]));
+    const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
     const payload = await generateDigest(
       newItems,
       (scan?.period as "daily" | "weekly") ?? "daily",
       targetNames,
-      env.OPENAI_API_KEY
+      env.OPENAI_API_KEY,
+      feedbackContext
     );
     await client.mutation(api.digests.createDigestRunWithItemsFromServer, {
       secret: effectiveSecret,
