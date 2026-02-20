@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -12,11 +12,15 @@ import type { DigestItem } from "@/lib/types";
 
 export default function TargetDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as Id<"watchTargets">;
   const target = useQuery(api.watchTargets.get, { id });
   const signals = useQuery(api.digestItems.listByWatchTarget, { watchTargetId: id, limit: 60 });
   const updateTarget = useMutation(api.watchTargets.update);
+  const removeTarget = useMutation(api.watchTargets.remove);
   const [scanning, setScanning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [scanningComprehensive, setScanningComprehensive] = useState(false);
   const [formCollapsed, setFormCollapsed] = useState(true);
   const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
@@ -364,6 +368,57 @@ export default function TargetDetailPage() {
             })}
           </ul>
         )}
+      </section>
+
+      <section className="card stack" style={{ borderColor: "var(--color-error, #b91c1c)", borderWidth: 1 }}>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>Delete watch target</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Permanently delete this watch target and all associated signals, raw items, and per-target scan schedule. This cannot be undone.
+        </p>
+        <label style={{ marginTop: "0.5rem" }}>
+          <span className="muted" style={{ display: "block", marginBottom: "0.25rem" }}>
+            Type <strong>{target.displayName}</strong> below to confirm
+          </span>
+          <input
+            type="text"
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder={target.displayName}
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 320,
+              padding: "0.5rem",
+              borderColor: deleteConfirmText && deleteConfirmText !== target.displayName ? "var(--color-error, #b91c1c)" : undefined,
+            }}
+            aria-label="Type watch target name to confirm deletion"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={deleting || deleteConfirmText !== target.displayName}
+          onClick={async () => {
+            setDeleting(true);
+            try {
+              await removeTarget({ id });
+              router.push("/targets");
+            } finally {
+              setDeleting(false);
+            }
+          }}
+          style={{
+            padding: "0.5rem 1rem",
+            borderRadius: 8,
+            border: "1px solid var(--color-error, #b91c1c)",
+            background: deleting || deleteConfirmText !== target.displayName ? "#9ca3af" : "var(--color-error, #b91c1c)",
+            color: "white",
+            fontWeight: 600,
+            cursor: deleting || deleteConfirmText !== target.displayName ? "not-allowed" : "pointer",
+            alignSelf: "flex-start",
+          }}
+        >
+          {deleting ? "Deleting…" : "Delete watch target"}
+        </button>
       </section>
     </div>
   );

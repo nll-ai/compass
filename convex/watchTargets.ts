@@ -75,10 +75,29 @@ export const update = mutation({
   },
 });
 
+/** Permanently delete a watch target and all associated records (digest items, raw items, per-target schedule). */
 export const remove = mutation({
   args: { id: v.id("watchTargets") },
   handler: async (ctx, { id }) => {
-    await ctx.db.patch(id, { active: false, updatedAt: Date.now() });
+    const digestItems = await ctx.db
+      .query("digestItems")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
+      .collect();
+    for (const row of digestItems) await ctx.db.delete(row._id);
+
+    const rawItems = await ctx.db
+      .query("rawItems")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
+      .collect();
+    for (const row of rawItems) await ctx.db.delete(row._id);
+
+    const schedule = await ctx.db
+      .query("watchTargetSchedule")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
+      .first();
+    if (schedule) await ctx.db.delete(schedule._id);
+
+    await ctx.db.delete(id);
     return id;
   },
 });
