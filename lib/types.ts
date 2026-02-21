@@ -6,7 +6,8 @@ export type DigestCategory =
   | "filing"
   | "news"
   | "conference";
-export type SourceType = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
+import type { SourceId } from "./sources/registry";
+export type SourceType = SourceId;
 export type TherapeuticArea = "cardiovascular" | "oncology" | "other";
 
 export type TargetLookupResult = {

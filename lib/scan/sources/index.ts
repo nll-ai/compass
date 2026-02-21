@@ -1,4 +1,5 @@
 import type { ScanTarget, SourceResult, ScanOptions } from "../types";
+import { ALL_SOURCE_IDS, type SourceId } from "../../sources/registry";
 import { runPubmed } from "./pubmed";
 import { runClinicalTrials } from "./clinicaltrials";
 import { runExa } from "./exa";
@@ -7,35 +8,35 @@ import { runOpenFda } from "./openfda";
 import { runRss } from "./rss";
 import { runPatents } from "./patents";
 
-export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
+export type { SourceId } from "../../sources/registry";
 
-const SOURCES: Array<{
-  name: SourceName;
-  run: (
+const RUNNERS: Record<
+  SourceId,
+  (
     targets: ScanTarget[],
     env: Record<string, string | undefined>,
     options?: ScanOptions
-  ) => Promise<SourceResult>;
-}> = [
-  { name: "pubmed", run: (t, e, o) => runPubmed(t, e, o) },
-  { name: "clinicaltrials", run: (t, e, o) => runClinicalTrials(t, e, o) },
-  { name: "edgar", run: (t, e, o) => runEdgar(t, e, o) },
-  { name: "exa", run: (t, e, o) => runExa(t, e, o) },
-  { name: "openfda", run: (_t, _e, o) => runOpenFda(undefined, undefined, o) },
-  { name: "rss", run: (_t, _e, o) => runRss(undefined, undefined, o) },
-  { name: "patents", run: (t, e, o) => runPatents(t, e, o) },
-];
+  ) => Promise<SourceResult>
+> = {
+  pubmed: (t, e, o) => runPubmed(t, e, o),
+  clinicaltrials: (t, e, o) => runClinicalTrials(t, e, o),
+  edgar: (t, e, o) => runEdgar(t, e, o),
+  exa: (t, e, o) => runExa(t, e, o),
+  openfda: (_t, _e, o) => runOpenFda(undefined, undefined, o),
+  rss: (_t, _e, o) => runRss(undefined, undefined, o),
+  patents: (t, e, o) => runPatents(t, e, o),
+};
 
 export async function runAllSources(
   targets: ScanTarget[],
   env: Record<string, string | undefined>,
   options?: ScanOptions
-): Promise<Record<SourceName, SourceResult>> {
+): Promise<Record<SourceId, SourceResult>> {
   const results = await Promise.all(
-    SOURCES.map(async (s) => {
-      const result = await s.run(targets, env, options);
-      return [s.name, result] as const;
+    ALL_SOURCE_IDS.map(async (id) => {
+      const result = await RUNNERS[id](targets, env, options);
+      return [id, result] as const;
     })
   );
-  return Object.fromEntries(results) as Record<SourceName, SourceResult>;
+  return Object.fromEntries(results) as Record<SourceId, SourceResult>;
 }

@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { DigestSummaryCard } from "@/components/compass/DigestSummaryCard";
+import { DataSourcesSection } from "@/components/compass/DataSourcesSection";
 import { formatDate } from "@/lib/formatters";
 
 function DashboardTargetRow({
@@ -204,6 +205,7 @@ export default function DashboardPage() {
             Add watch targets →
           </Link>
         </section>
+        <DataSourcesSection />
       </div>
     );
   }
@@ -248,6 +250,8 @@ export default function DashboardPage() {
           <p style={{ color: "#b91c1c", margin: 0, fontSize: "0.9rem" }}>{scanError}</p>
         )}
       </section>
+
+      <DataSourcesSection />
 
       <section className="stack">
         <h2 style={{ margin: 0 }}>Watch targets we&apos;re monitoring</h2>

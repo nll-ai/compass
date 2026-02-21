@@ -1,9 +1,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-
-const SOURCES = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"] as const;
-const SOURCES_TOTAL = SOURCES.length;
+import { ALL_SOURCE_IDS, SOURCES_TOTAL } from "./lib/sourceIds";
 
 function checkScanSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
@@ -53,7 +51,7 @@ export const createRunForServer = mutation({
       totalItemsFound: 0,
       newItemsFound: 0,
     });
-    for (const source of SOURCES) {
+    for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
         scanRunId,
         source,
@@ -148,7 +146,7 @@ export const scheduleScan = internalMutation({
       totalItemsFound: 0,
       newItemsFound: 0,
     });
-    for (const source of SOURCES) {
+    for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
         scanRunId,
         source,
@@ -180,7 +178,7 @@ export const runScan = mutation({
       totalItemsFound: 0,
       newItemsFound: 0,
     });
-    for (const source of SOURCES) {
+    for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
         scanRunId,
         source,

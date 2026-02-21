@@ -1,16 +1,8 @@
 import type { SourceType } from "./types";
+import { getSourceLabel } from "./sources/registry";
 
 export function sourceLabel(source: SourceType): string {
-  const labels: Record<SourceType, string> = {
-    pubmed: "PubMed",
-    clinicaltrials: "ClinicalTrials.gov",
-    edgar: "SEC EDGAR",
-    exa: "Exa AI",
-    openfda: "openFDA",
-    rss: "RSS",
-    patents: "Patents",
-  };
-  return labels[source];
+  return getSourceLabel(source);
 }
 
 /** Date label shown next to a source (e.g. "Pub date", "Trial start"). */

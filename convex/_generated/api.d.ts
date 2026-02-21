@@ -15,6 +15,7 @@ import type * as digestRuns from "../digestRuns.js";
 import type * as digests from "../digests.js";
 import type * as lib_formatters from "../lib/formatters.js";
 import type * as lib_slack_builder from "../lib/slack_builder.js";
+import type * as lib_sourceIds from "../lib/sourceIds.js";
 import type * as lib_types from "../lib/types.js";
 import type * as pageContentCache from "../pageContentCache.js";
 import type * as rawItems from "../rawItems.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   digests: typeof digests;
   "lib/formatters": typeof lib_formatters;
   "lib/slack_builder": typeof lib_slack_builder;
+  "lib/sourceIds": typeof lib_sourceIds;
   "lib/types": typeof lib_types;
   pageContentCache: typeof pageContentCache;
   rawItems: typeof rawItems;

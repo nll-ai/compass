@@ -1,6 +1,8 @@
 import type { Id } from "../../convex/_generated/dataModel";
+import type { SourceId } from "../sources/registry";
 
-export type SourceName = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
+/** @deprecated Use SourceId from lib/sources/registry instead. */
+export type SourceName = SourceId;
 
 export type ScanMode = "latest" | "comprehensive";
 

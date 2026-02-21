@@ -2,11 +2,10 @@ import { NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { runAllSources, type SourceName } from "../../../lib/scan/sources";
+import { runAllSources } from "../../../lib/scan/sources";
+import { ALL_SOURCE_IDS } from "../../../lib/sources/registry";
 import { generateDigest } from "../../../lib/scan/digest";
 import type { ScanOptions, ScanTarget } from "../../../lib/scan/types";
-
-const SOURCES: SourceName[] = ["pubmed", "clinicaltrials", "edgar", "exa", "openfda", "rss", "patents"];
 
 /** Allow long comprehensive runs (Vercel Pro supports up to 300s per route). */
 export const maxDuration = 300;
@@ -90,7 +89,7 @@ export async function POST(request: Request) {
       scanRunId,
       status: "completed",
       completedAt: Date.now(),
-      sourcesCompleted: SOURCES.length,
+      sourcesCompleted: ALL_SOURCE_IDS.length,
       totalItemsFound: 0,
       newItemsFound: 0,
     });
@@ -129,7 +128,7 @@ export async function POST(request: Request) {
   let totalFound = 0;
   let newFound = 0;
 
-  for (const source of SOURCES) {
+  for (const source of ALL_SOURCE_IDS) {
     const result = sourceResults[source];
     await client.mutation(api.scans.updateSourceStatusFromServer, {
       secret: effectiveSecret,
@@ -173,7 +172,7 @@ export async function POST(request: Request) {
     scanRunId,
     status: "completed",
     completedAt: Date.now(),
-    sourcesCompleted: SOURCES.length,
+    sourcesCompleted: ALL_SOURCE_IDS.length,
     totalItemsFound: totalFound,
     newItemsFound: newFound,
   });
