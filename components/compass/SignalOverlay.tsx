@@ -18,45 +18,67 @@ export function SignalOverlay({
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [exiting, setExiting] = useState(false);
+  const [exitItem, setExitItem] = useState<DigestItem | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [fetchedContent, setFetchedContent] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const lastOpenItemRef = useRef<DigestItem | null>(null);
 
-  const rawItemIds = item?.rawItemIds?.length ? (item.rawItemIds as Id<"rawItems">[]) : [];
+  const showing = (open && item) || (exiting && exitItem);
+  const displayItem = (open && item) ? item : exitItem;
+
+  const rawItemIds = displayItem?.rawItemIds?.length ? (displayItem.rawItemIds as Id<"rawItems">[]) : [];
   const rawItems = useQuery(
     api.rawItems.getByIds,
-    open && rawItemIds.length > 0 ? { ids: rawItemIds } : "skip"
+    showing && rawItemIds.length > 0 ? { ids: rawItemIds } : "skip"
   );
 
   useEffect(() => {
     setMounted(typeof document !== "undefined");
   }, []);
 
+  if (open && item) lastOpenItemRef.current = item;
   useEffect(() => {
-    if (!open) {
+    if (!open && lastOpenItemRef.current && !exiting) {
+      setExitItem(lastOpenItemRef.current);
+      setExiting(true);
+      lastOpenItemRef.current = null;
+    }
+  }, [open, exiting]);
+  const handleTransitionEnd = (e: React.TransitionEvent) => {
+    if (e.target !== panelRef.current || e.propertyName !== "transform") return;
+    if (exiting) {
+      setExiting(false);
+      setExitItem(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!showing) {
       setSourceUrl(null);
       setFetchedContent(null);
       setFetchError(null);
       setFetchLoading(false);
     }
-  }, [open]);
+  }, [showing]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!showing) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handleKeyDown);
     document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
+    if (open) closeRef.current?.focus();
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "";
     };
-  }, [open, onClose]);
+  }, [showing, open, onClose]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -109,7 +131,7 @@ export function SignalOverlay({
     };
   }, [sourceUrl, hasStoredContent]);
 
-  if (!mounted || !open || !item) return null;
+  if (!mounted || !showing || !displayItem) return null;
 
   const overlay = (
     <div
@@ -131,11 +153,13 @@ export function SignalOverlay({
           position: "absolute",
           inset: 0,
           background: "rgba(0,0,0,0.4)",
-          transition: "opacity 0.2s ease",
+          opacity: exiting ? 0 : 1,
+          transition: "opacity 0.25s ease-out",
         }}
       />
       <div
         ref={panelRef}
+        onTransitionEnd={handleTransitionEnd}
         style={{
           position: "relative",
           width: "min(420px, 90vw)",
@@ -145,7 +169,7 @@ export function SignalOverlay({
           boxShadow: "-4px 0 24px rgba(0,0,0,0.15)",
           display: "flex",
           flexDirection: "column",
-          transform: "translateX(0)",
+          transform: exiting ? "translateX(100%)" : "translateX(0)",
           transition: "transform 0.25s ease-out",
           overflow: "hidden",
         }}
@@ -181,7 +205,7 @@ export function SignalOverlay({
         </div>
         <div style={{ flex: "1 1 auto", overflow: "auto", padding: "1rem" }}>
           <DigestItemCard
-            item={item}
+            item={displayItem}
             onOpenInOverlay={undefined}
             onSourceClick={handleSourceClick}
           />

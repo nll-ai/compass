@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check-sec": "node scripts/check-sec-company-list.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.24",

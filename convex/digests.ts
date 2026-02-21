@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, mutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { formatSourceDate } from "./lib/formatters";
 
 const categoryValidator = v.union(
   v.literal("trial_update"),
@@ -40,7 +41,7 @@ export const createDigestRunWithItemsFromServer = mutation({
         headline: v.string(),
         synthesis: v.string(),
         strategicImplication: v.optional(v.string()),
-        sources: v.array(v.object({ title: v.string(), url: v.string(), source: v.string() })),
+        sources: v.array(v.object({ title: v.string(), url: v.string(), source: v.string(), date: v.optional(v.string()) })),
       }),
     ),
   },
@@ -95,7 +96,7 @@ export const createDigestRunWithItems = internalMutation({
         headline: v.string(),
         synthesis: v.string(),
         strategicImplication: v.optional(v.string()),
-        sources: v.array(v.object({ title: v.string(), url: v.string(), source: v.string() })),
+        sources: v.array(v.object({ title: v.string(), url: v.string(), source: v.string(), date: v.optional(v.string()) })),
       }),
     ),
   },
@@ -174,7 +175,14 @@ export const generate = internalAction({
           headline: item.title,
           synthesis: item.abstract ?? item.title,
           strategicImplication: undefined,
-          sources: [{ title: item.title, url: item.url, source: item.source }],
+          sources: [
+            {
+              title: item.title,
+              url: item.url,
+              source: item.source,
+              date: formatSourceDate(item.source, item.publishedAt, item.metadata),
+            },
+          ],
         })),
       });
       return;
@@ -267,10 +275,18 @@ Limit to 20 items. Use sourceIndices to reference which of the new items (by ind
       const indices = it.sourceIndices ?? [];
       const rawItemIds = indices.map((i) => newItems[i]?._id).filter(Boolean) as typeof newItems[0]["_id"][];
       if (rawItemIds.length === 0) continue;
-      const sources = indices.map((i) => {
-        const r = newItems[i];
-        return r ? { title: r.title, url: r.url, source: r.source } : { title: "", url: "", source: "" };
-      }).filter((s) => s.title);
+      const sources = indices
+        .map((i) => {
+          const r = newItems[i];
+          if (!r) return { title: "", url: "", source: "" as const, date: undefined as string | undefined };
+          return {
+            title: r.title,
+            url: r.url,
+            source: r.source,
+            date: formatSourceDate(r.source, r.publishedAt, r.metadata),
+          };
+        })
+        .filter((s) => s.title);
 
       const category: "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference" = categoryOk(it.category ?? "news") ? (it.category as "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference") : "news";
       const sig: "critical" | "high" | "medium" | "low" = significanceOk(it.significance ?? "low") ? (it.significance as "critical" | "high" | "medium" | "low") : "low";

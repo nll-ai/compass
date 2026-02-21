@@ -132,6 +132,7 @@ export default defineSchema({
         title: v.string(),
         url: v.string(),
         source: v.string(),
+        date: v.optional(v.string()),
       }),
     ),
     reviewedAt: v.optional(v.number()),

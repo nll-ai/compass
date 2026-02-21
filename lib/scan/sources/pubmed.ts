@@ -65,7 +65,7 @@ export async function runPubmed(
         return { items: [], error: `PubMed esummary: ${summaryRes.status}` };
       }
       const summaryData = (await summaryRes.json()) as {
-        result?: Record<string, { title?: string }>;
+        result?: Record<string, { title?: string; pubdate?: string; sortpubdate?: string }>;
       };
       const result = summaryData.result ?? {};
 
@@ -87,14 +87,21 @@ export async function runPubmed(
       }
 
       for (const pmid of idlist) {
-        const title = result[pmid]?.title?.trim() || `PubMed ${pmid}`;
+        const entry = result[pmid];
+        const title = entry?.title?.trim() || `PubMed ${pmid}`;
+        const pubdate = entry?.pubdate;
+        const sortpubdate = entry?.sortpubdate;
+        let publishedAt: number | undefined =
+          sortpubdate != null ? new Date(sortpubdate.replace(" ", "T")).getTime() : undefined;
+        if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
         items.push({
           watchTargetId: target._id,
           externalId: pmid,
           title,
           url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
           abstract: abstractByPmid[pmid],
-          metadata: {},
+          publishedAt,
+          metadata: pubdate != null ? { pubdate } : {},
         });
       }
     }

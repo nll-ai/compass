@@ -59,7 +59,7 @@ export function DigestItemCard({
           </span>
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {item.sources.map((s, i) => (
-              <li key={i}>
+              <li key={i} style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
                 {onSourceClick ? (
                   <button
                     type="button"
@@ -99,6 +99,9 @@ export function DigestItemCard({
                     <span>{s.title || "View"}</span>
                     <span aria-hidden>↗</span>
                   </a>
+                )}
+                {s.date != null && s.date !== "" && (
+                  <span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>{s.date}</span>
                 )}
               </li>
             ))}

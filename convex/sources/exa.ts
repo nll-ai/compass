@@ -51,10 +51,16 @@ export const scan = internalAction({
           }),
         });
         if (!res.ok) continue;
-        const data = (await res.json()) as { results?: Array<{ id: string; title?: string; url?: string; text?: string }> };
+        const data = (await res.json()) as {
+          results?: Array<{ id: string; title?: string; url?: string; text?: string; publishedDate?: string }>;
+        };
         const results = data.results ?? [];
         for (const hit of results) {
           const externalId = hit.id ?? hit.url ?? `${target._id}-${results.indexOf(hit)}`;
+          const publishedDate = hit.publishedDate;
+          let publishedAt: number | undefined =
+            publishedDate != null ? new Date(publishedDate).getTime() : undefined;
+          if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
           const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
             source: "exa",
             externalId,
@@ -69,8 +75,8 @@ export const scan = internalAction({
             title: hit.title ?? hit.url ?? "Exa result",
             url: hit.url ?? "",
             abstract: hit.text ?? undefined,
-            publishedAt: undefined,
-            metadata: {},
+            publishedAt,
+            metadata: publishedDate != null ? { publishedDate } : {},
             isNew,
           });
           totalFound++;

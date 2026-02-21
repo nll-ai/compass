@@ -1,5 +1,6 @@
 import type { ScanTarget, SourceResult, ScanOptions } from "../types";
 import { fetchWithRetry } from "../fetchWithRetry";
+import { runSECSearchAgent } from "./edgar-agent";
 
 const SEC_USER_AGENT = "Compass competitive intelligence app (contact via GitHub)";
 
@@ -33,16 +34,36 @@ function getFilingsLimit(options?: ScanOptions): number {
   return options?.mode === "comprehensive" ? 50 : 20;
 }
 
+/** Extract significant words from company name for matching (e.g. "Genocea Biosciences, Inc." → ["Genocea", "Biosciences"]). */
+function companyNameTokens(company: string): string[] {
+  const skip = new Set(["inc", "corp", "ltd", "co", "llc", "plc", "lp", "na", "sa", "ag", "nv", "the"]);
+  return company
+    .trim()
+    .split(/[\s,/&]+/)
+    .map((s) => s.replace(/\./g, "").trim().toLowerCase())
+    .filter((s) => s.length >= 2 && !skip.has(s));
+}
+
 export async function runEdgar(
   targets: ScanTarget[],
-  _env: Record<string, string | undefined>,
+  env: Record<string, string | undefined>,
   options?: ScanOptions
 ): Promise<SourceResult> {
   const items: SourceResult["items"] = [];
+  const seenAccessions = new Set<string>();
   const companiesLimit = getCompaniesLimit(options);
   const filingsLimit = getFilingsLimit(options);
 
   try {
+    // Run SEC search subagent (full-text + company lookup with query expansion) in parallel with company-list fetch
+    const agentPromise =
+      targets.length > 0 && env.OPENAI_API_KEY
+        ? runSECSearchAgent(targets, env.OPENAI_API_KEY, {
+            maxSteps: 5,
+            fullTextCount: options?.mode === "comprehensive" ? 20 : 12,
+          })
+        : Promise.resolve([]);
+
     const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
       headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" },
     });
@@ -50,20 +71,31 @@ export async function runEdgar(
     const data = (await res.json()) as Record<string, CompanyTickerEntry>;
     const companies = Object.values(data);
 
-    const seenAccessions = new Set<string>();
     const formsWeWant = ["10-K", "10-Q"];
 
     for (const target of targets) {
-      const baseTerms = [target.name, target.displayName, ...target.aliases];
+      const companyTerms = target.company
+        ? [target.company, ...companyNameTokens(target.company)]
+        : [];
+      const baseTerms = [
+        target.name,
+        target.displayName,
+        ...target.aliases,
+        ...companyTerms,
+      ];
       const learned = (target.learnedQueryTerms ?? []).slice(0, 3);
-      const searchTerms = [...baseTerms, ...learned].map((s) =>
+      const searchTerms = [...new Set([...baseTerms, ...learned].map((s) =>
         s.trim().toLowerCase()
-      ).filter(Boolean);
+      ).filter(Boolean))];
       const matches = companies.filter((c) => {
         const title = (c.title ?? "").toLowerCase();
         const ticker = (c.ticker ?? "").toLowerCase();
         return searchTerms.some((t) => title.includes(t) || ticker === t || title === t);
       });
+
+      if (process.env.DEBUG_EDGAR === "1") {
+        console.debug("[Edgar]", target.displayName, { searchTerms: searchTerms.slice(0, 15), matchesCount: matches.length, firstMatch: matches[0]?.title });
+      }
 
       for (const company of matches.slice(0, companiesLimit)) {
         const cik = company.cik_str;
@@ -107,6 +139,16 @@ export async function runEdgar(
         }
       }
     }
+
+    // Merge subagent results (dedupe by externalId)
+    const agentItems = await agentPromise;
+    for (const agentItem of agentItems) {
+      if (agentItem.externalId && !seenAccessions.has(agentItem.externalId)) {
+        seenAccessions.add(agentItem.externalId);
+        items.push(agentItem);
+      }
+    }
+
     return { items };
   } catch (err) {
     return { items: [], error: err instanceof Error ? err.message : String(err) };

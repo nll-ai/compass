@@ -36,6 +36,7 @@ export type DigestSourceRef = {
   title: string;
   url: string;
   source: string;
+  date?: string;
 };
 
 export type DigestItem = {

@@ -28,20 +28,27 @@ export async function runClinicalTrials(
       }
       const data = (await res.json()) as {
         studies?: Array<{
-          protocolSection?: { identificationModule?: { nctId?: string; briefTitle?: string } };
+          protocolSection?: {
+            identificationModule?: { nctId?: string; briefTitle?: string };
+            statusModule?: { startDateStruct?: { date?: string } };
+          };
         }>;
       };
       const studies = data.studies ?? [];
       for (const study of studies) {
         const nctId = study.protocolSection?.identificationModule?.nctId ?? "";
         const title = study.protocolSection?.identificationModule?.briefTitle ?? nctId;
+        const startDate = study.protocolSection?.statusModule?.startDateStruct?.date;
+        let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
+        if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
         if (!nctId) continue;
         items.push({
           watchTargetId: target._id,
           externalId: nctId,
           title,
           url: `https://clinicaltrials.gov/study/${nctId}`,
-          metadata: {},
+          publishedAt,
+          metadata: startDate != null ? { startDate } : {},
         });
       }
     }

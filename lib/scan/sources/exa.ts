@@ -48,19 +48,30 @@ export async function runExa(
         return { items: [], error: `Exa: ${res.status}` };
       }
       const data = (await res.json()) as {
-        results?: Array<{ id: string; title?: string; url?: string; text?: string }>;
+        results?: Array<{
+          id: string;
+          title?: string;
+          url?: string;
+          text?: string;
+          publishedDate?: string;
+        }>;
       };
       const results = data.results ?? [];
       for (let i = 0; i < results.length; i++) {
         const hit = results[i];
         const externalId = hit.id ?? hit.url ?? `${target._id}-${i}`;
+        const publishedDate = hit.publishedDate;
+        let publishedAt: number | undefined =
+          publishedDate != null ? new Date(publishedDate).getTime() : undefined;
+        if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
         items.push({
           watchTargetId: target._id,
           externalId,
           title: hit.title ?? hit.url ?? "Exa result",
           url: hit.url ?? "",
           abstract: hit.text,
-          metadata: {},
+          publishedAt,
+          metadata: publishedDate != null ? { publishedDate } : {},
         });
       }
     }

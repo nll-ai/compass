@@ -1,4 +1,5 @@
 import type { Id } from "../../convex/_generated/dataModel";
+import { formatSourceDate } from "../source-utils";
 
 export interface NewRawItem {
   _id: Id<"rawItems">;
@@ -8,6 +9,8 @@ export interface NewRawItem {
   source: string;
   abstract?: string | null;
   fullText?: string | null;
+  publishedAt?: number | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 const CATEGORIES = ["trial_update", "publication", "regulatory", "filing", "news", "conference"] as const;
@@ -24,7 +27,7 @@ export interface DigestItemPayload {
   headline: string;
   synthesis: string;
   strategicImplication?: string;
-  sources: Array<{ title: string; url: string; source: string }>;
+  sources: Array<{ title: string; url: string; source: string; date?: string }>;
 }
 
 export interface DigestPayload {
@@ -96,7 +99,14 @@ export async function generateDigest(
         headline: item.title,
         synthesis: item.abstract ?? item.title,
         strategicImplication: undefined,
-        sources: [{ title: item.title, url: item.url, source: item.source }],
+        sources: [
+          {
+            title: item.title,
+            url: item.url,
+            source: item.source,
+            date: formatSourceDate(item.source, item.publishedAt, item.metadata),
+          },
+        ],
       })),
     };
   }
@@ -203,7 +213,13 @@ Limit to 20 items. Use sourceIndices to reference which of the new items (by ind
     const sources = indices
       .map((i) => {
         const r = newItems[i];
-        return r ? { title: r.title, url: r.url, source: r.source } : { title: "", url: "", source: "" };
+        if (!r) return { title: "", url: "", source: "" as const, date: undefined };
+        return {
+          title: r.title,
+          url: r.url,
+          source: r.source,
+          date: formatSourceDate(r.source, r.publishedAt, r.metadata),
+        };
       })
       .filter((s) => s.title);
 

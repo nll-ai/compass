@@ -32,6 +32,20 @@ export const scan = internalAction({
         if (!res.ok) continue;
         const data = (await res.json()) as { esearchresult?: { idlist?: string[] } };
         const idlist = data.esearchresult?.idlist ?? [];
+        if (idlist.length === 0) continue;
+        let summaryByPmid: Record<string, { title?: string; pubdate?: string; sortpubdate?: string }> = {};
+        const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idlist.join(",")}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
+        const summaryRes = await fetch(summaryUrl);
+        if (summaryRes.ok) {
+          const summaryData = (await summaryRes.json()) as {
+            result?: Record<string, { title?: string; pubdate?: string; sortpubdate?: string }>;
+          };
+          const result = summaryData.result ?? {};
+          for (const pmid of idlist) {
+            const entry = result[pmid];
+            if (entry) summaryByPmid[pmid] = entry;
+          }
+        }
         for (const pmid of idlist) {
           const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
             source: "pubmed",
@@ -39,16 +53,23 @@ export const scan = internalAction({
           });
           const isNew = !existing;
           if (existing) continue;
+          const entry = summaryByPmid[pmid];
+          const title = entry?.title?.trim() || `PubMed ${pmid}`;
+          const pubdate = entry?.pubdate;
+          const sortpubdate = entry?.sortpubdate;
+          let publishedAt: number | undefined =
+            sortpubdate != null ? new Date(sortpubdate.replace(" ", "T")).getTime() : undefined;
+          if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
           await ctx.runMutation(internal.rawItems.insertRawItem, {
             scanRunId,
             watchTargetId: target._id,
             source: "pubmed",
             externalId: pmid,
-            title: `PubMed ${pmid}`,
+            title,
             url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
             abstract: undefined,
-            publishedAt: undefined,
-            metadata: {},
+            publishedAt,
+            metadata: pubdate != null ? { pubdate } : {},
             isNew,
           });
           totalFound++;

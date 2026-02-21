@@ -29,11 +29,21 @@ export const scan = internalAction({
         const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(query)}&pageSize=5`;
         const res = await fetch(url);
         if (!res.ok) continue;
-        const data = (await res.json()) as { studies?: Array<{ protocolSection?: { identificationModule?: { nctId?: string; briefTitle?: string } }; derivedSection?: { conditionsModule?: { conditions?: string[] } } }> };
+        const data = (await res.json()) as {
+          studies?: Array<{
+            protocolSection?: {
+              identificationModule?: { nctId?: string; briefTitle?: string };
+              statusModule?: { startDateStruct?: { date?: string } };
+            };
+          }>;
+        };
         const studies = data.studies ?? [];
         for (const study of studies) {
           const nctId = study.protocolSection?.identificationModule?.nctId ?? "";
           const title = study.protocolSection?.identificationModule?.briefTitle ?? nctId;
+          const startDate = study.protocolSection?.statusModule?.startDateStruct?.date;
+          let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
+          if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
           if (!nctId) continue;
           const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
             source: "clinicaltrials",
@@ -49,8 +59,8 @@ export const scan = internalAction({
             title,
             url: `https://clinicaltrials.gov/study/${nctId}`,
             abstract: undefined,
-            publishedAt: undefined,
-            metadata: {},
+            publishedAt,
+            metadata: startDate != null ? { startDate } : {},
             isNew,
           });
           totalFound++;

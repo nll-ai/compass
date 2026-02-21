@@ -187,10 +187,10 @@ export default function DashboardPage() {
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Get started</h2>
           <p className="muted" style={{ margin: 0 }}>
-            Add watch targets, connect Slack, and run your first scan. Takes about 10 minutes.
+            Add watch targets, then run a scan from the dashboard or from a target’s page.
           </p>
           <Link
-            href="/setup"
+            href="/targets"
             className="card"
             style={{
               display: "inline-block",
@@ -201,7 +201,7 @@ export default function DashboardPage() {
               fontWeight: 600,
             }}
           >
-            Get started →
+            Add watch targets →
           </Link>
         </section>
       </div>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
         ) : (
           <div className="card">
             <p className="muted" style={{ margin: 0 }}>
-              No digest yet. Run your first scan from <Link href="/setup">Setup</Link>.
+              No digest yet. Run your first scan from the dashboard or <Link href="/targets">Watch Targets</Link>.
             </p>
           </div>
         )}

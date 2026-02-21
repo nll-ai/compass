@@ -24,7 +24,7 @@ export default function HistoryPage() {
       {digestRuns.length === 0 ? (
         <div className="card">
           <p className="muted" style={{ margin: 0 }}>
-            No digest runs yet. Run a scan from <Link href="/setup">Setup</Link> or the dashboard.
+            No digest runs yet. Run a scan from the <Link href="/">dashboard</Link> or <Link href="/targets">Watch Targets</Link>.
           </p>
         </div>
       ) : (
