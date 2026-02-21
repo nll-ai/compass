@@ -51,6 +51,11 @@ export default function TargetDetailPage() {
     api.digestItems.listByDigestRun,
     expandedReportId ? { digestRunId: expandedReportId } : "skip"
   );
+  const sourceLinkFeedbackMap = useQuery(
+    api.sourceLinkFeedback.getFeedbackMap,
+    sourceLinks?.length ? { rawItemIds: sourceLinks.map((r) => r._id) } : "skip"
+  );
+  const setSourceLinkFeedback = useMutation(api.sourceLinkFeedback.setFeedback);
 
   useEffect(() => {
     if (target) {
@@ -460,8 +465,8 @@ export default function TargetDetailPage() {
                     <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
                       {summary.slice(0, 200)}{summary.length > 200 ? "…" : ""}
                     </p>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <a href={raw.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.9rem", color: "#2563eb" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                      <a href={raw.url} target="_blank" rel="noopener noreferrer" className="link" style={{ fontSize: "0.9rem" }}>
                         Open original ↗
                       </a>
                       <button
@@ -479,6 +484,26 @@ export default function TargetDetailPage() {
                       >
                         View substantive content
                       </button>
+                      <span className="source-link-feedback" role="group" aria-label="Was this useful?">
+                        <button
+                          type="button"
+                          onClick={() => setSourceLinkFeedback({ rawItemId: raw._id, feedback: "good" })}
+                          aria-pressed={sourceLinkFeedbackMap?.[raw._id] === "good"}
+                          aria-label="Useful"
+                          title="Mark as useful"
+                        >
+                          👍
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSourceLinkFeedback({ rawItemId: raw._id, feedback: "bad" })}
+                          aria-pressed={sourceLinkFeedbackMap?.[raw._id] === "bad"}
+                          aria-label="Not useful"
+                          title="Mark as not useful"
+                        >
+                          👎
+                        </button>
+                      </span>
                     </div>
                   </article>
                 </li>
