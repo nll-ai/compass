@@ -134,14 +134,15 @@ export const getExistingExternalIdsFromServer = query({
   },
 });
 
-/** List Source Links (raw items) for a watch target, newest first. Optionally filter by source(s) for timeline/insight views. */
+/** List Source Links (raw items) for a watch target, newest first. Optionally filter by source(s) for timeline/insight views. When excludeHidden is true, items with thumbs-down feedback are omitted. */
 export const listByWatchTarget = query({
   args: {
     watchTargetId: v.id("watchTargets"),
     limit: v.optional(v.number()),
     sources: v.optional(v.array(v.string())),
+    excludeHidden: v.optional(v.boolean()),
   },
-  handler: async (ctx, { watchTargetId, limit = 100, sources }) => {
+  handler: async (ctx, { watchTargetId, limit = 100, sources, excludeHidden }) => {
     let items = await ctx.db
       .query("rawItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -149,6 +150,14 @@ export const listByWatchTarget = query({
     if (sources != null && sources.length > 0) {
       const set = new Set(sources);
       items = items.filter((i) => set.has(i.source));
+    }
+    if (excludeHidden) {
+      const hidden = await ctx.db
+        .query("sourceLinkFeedback")
+        .withIndex("by_feedback", (q) => q.eq("feedback", "bad"))
+        .collect();
+      const hiddenIds = new Set(hidden.map((h) => h.rawItemId));
+      items = items.filter((i) => !hiddenIds.has(i._id));
     }
     items.sort((a, b) => (b.publishedAt ?? b._creationTime) - (a.publishedAt ?? a._creationTime));
     return items.slice(0, limit);

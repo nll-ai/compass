@@ -2,7 +2,7 @@
 
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Doc } from "@/convex/_generated/dataModel";
@@ -100,9 +100,21 @@ export default function TargetTimelinePage() {
     watchTargetId: id,
     limit: 150,
     sources,
+    excludeHidden: true,
   });
+  const feedbackMap = useQuery(
+    api.sourceLinkFeedback.getFeedbackMap,
+    items ? { rawItemIds: items.map((i) => i._id) } : "skip"
+  );
+  const setFeedback = useMutation(api.sourceLinkFeedback.setFeedback);
 
   const [overlayItem, setOverlayItem] = useState<Doc<"rawItems"> | null>(null);
+  const [exitingIds, setExitingIds] = useState<Set<Id<"rawItems">>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<Id<"rawItems">>>(new Set());
+
+  const visibleItems = (items ?? []).filter(
+    (i) => !hiddenIds.has(i._id) || exitingIds.has(i._id)
+  );
 
   if (target === undefined || items === undefined) {
     return (
@@ -127,7 +139,7 @@ export default function TargetTimelinePage() {
     );
   }
 
-  const grouped = groupByYearMonth(items);
+  const grouped = groupByYearMonth(visibleItems);
   const sortedGroups = [...grouped.entries()].sort((a, b) => {
     const tsA = a[1][0] ? (a[1][0].publishedAt ?? a[1][0]._creationTime) : 0;
     const tsB = b[1][0] ? (b[1][0].publishedAt ?? b[1][0]._creationTime) : 0;
@@ -170,7 +182,7 @@ export default function TargetTimelinePage() {
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <div className="timeline-empty">
           <p>
             No {currentFocusLabel.toLowerCase()} events found yet.
@@ -182,7 +194,7 @@ export default function TargetTimelinePage() {
       ) : (
         <>
           <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-            {items.length} event{items.length !== 1 ? "s" : ""}
+            {visibleItems.length} event{visibleItems.length !== 1 ? "s" : ""}
           </p>
           <div className="timeline-track">
             {sortedGroups.map(([yearMonth, groupItems]) => (
@@ -194,8 +206,25 @@ export default function TargetTimelinePage() {
                   {groupItems.map((raw) => {
                     const ts = raw.publishedAt ?? raw._creationTime;
                     const summary = cleanSummary(raw.abstract ?? raw.title);
+                    const isExiting = exitingIds.has(raw._id);
                     return (
-                      <div key={raw._id} className="timeline-event">
+                      <div
+                        key={raw._id}
+                        className={`timeline-event${isExiting ? " timeline-event-exiting" : ""}`}
+                        onTransitionEnd={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.propertyName !== "opacity" && e.propertyName !== "max-height")
+                            return;
+                          if (!exitingIds.has(raw._id)) return;
+                          setFeedback({ rawItemId: raw._id, feedback: "bad" });
+                          setHiddenIds((prev) => new Set(prev).add(raw._id));
+                          setExitingIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(raw._id);
+                            return next;
+                          });
+                        }}
+                      >
                         <article className="timeline-card">
                           <div className="timeline-card-meta">
                             <SourceBadge source={raw.source as SourceType} />
@@ -221,6 +250,28 @@ export default function TargetTimelinePage() {
                             >
                               View details
                             </button>
+                            <span className="timeline-feedback" aria-label="Feedback">
+                              <button
+                                type="button"
+                                onClick={() => setFeedback({ rawItemId: raw._id, feedback: "good" })}
+                                aria-pressed={feedbackMap?.[raw._id] === "good"}
+                                aria-label="Thumbs up"
+                                title="Relevant"
+                                className={feedbackMap?.[raw._id] === "good" ? "active" : undefined}
+                              >
+                                👍
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExitingIds((prev) => new Set(prev).add(raw._id))}
+                                aria-pressed={feedbackMap?.[raw._id] === "bad"}
+                                aria-label="Thumbs down (hide from timeline)"
+                                title="Not relevant (hide from timeline)"
+                                className={feedbackMap?.[raw._id] === "bad" ? "active" : undefined}
+                              >
+                                👎
+                              </button>
+                            </span>
                           </div>
                         </article>
                       </div>

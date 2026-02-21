@@ -212,6 +212,15 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_updatedAt", ["updatedAt"]),
 
+  /** Thumbs up/down on source links (raw items). Thumbs down = hide from timeline. */
+  sourceLinkFeedback: defineTable({
+    rawItemId: v.id("rawItems"),
+    feedback: v.union(v.literal("good"), v.literal("bad")),
+    updatedAt: v.number(),
+  })
+    .index("by_rawItem", ["rawItemId"])
+    .index("by_feedback", ["feedback"]),
+
   /** Per-watch-target scan schedule (one optional row per target). */
   watchTargetSchedule: defineTable({
     watchTargetId: v.id("watchTargets"),

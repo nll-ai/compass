@@ -25,6 +25,7 @@ import type * as scanSchedule from "../scanSchedule.js";
 import type * as scans from "../scans.js";
 import type * as settings from "../settings.js";
 import type * as slack from "../slack.js";
+import type * as sourceLinkFeedback from "../sourceLinkFeedback.js";
 import type * as sources_clinicaltrials from "../sources/clinicaltrials.js";
 import type * as sources_edgar from "../sources/edgar.js";
 import type * as sources_exa from "../sources/exa.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   scans: typeof scans;
   settings: typeof settings;
   slack: typeof slack;
+  sourceLinkFeedback: typeof sourceLinkFeedback;
   "sources/clinicaltrials": typeof sources_clinicaltrials;
   "sources/edgar": typeof sources_edgar;
   "sources/exa": typeof sources_exa;
