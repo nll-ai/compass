@@ -8,16 +8,21 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { DigestItemCard } from "@/components/compass/DigestItemCard";
 import { SignalOverlay } from "@/components/compass/SignalOverlay";
+import { SourceBadge } from "@/components/compass/SourceBadge";
+import { SourceLinkOverlay } from "@/components/compass/SourceLinkOverlay";
 import { SourceSelector } from "@/components/compass/SourceSelector";
 import type { DigestItem } from "@/lib/types";
 import { ALL_SOURCE_IDS, getSourceLabel, type SourceId } from "@/lib/sources/registry";
+import type { Doc } from "@/convex/_generated/dataModel";
+import { formatSourceDate } from "@/lib/source-utils";
 
 export default function TargetDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as Id<"watchTargets">;
   const target = useQuery(api.watchTargets.get, { id });
-  const signals = useQuery(api.digestItems.listByWatchTarget, { watchTargetId: id, limit: 60 });
+  const sourceLinks = useQuery(api.rawItems.listByWatchTarget, { watchTargetId: id, limit: 80 });
+  const signalReports = useQuery(api.digestRuns.listSignalReportsForTarget, { watchTargetId: id, limit: 20 });
   const updateTarget = useMutation(api.watchTargets.update);
   const removeTarget = useMutation(api.watchTargets.remove);
   const [scanning, setScanning] = useState(false);
@@ -26,6 +31,8 @@ export default function TargetDetailPage() {
   const [scanningComprehensive, setScanningComprehensive] = useState(false);
   const [formCollapsed, setFormCollapsed] = useState(true);
   const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
+  const [sourceLinkOverlay, setSourceLinkOverlay] = useState<Doc<"rawItems"> | null>(null);
+  const [expandedReportId, setExpandedReportId] = useState<Id<"digestRuns"> | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<SourceId[]>(() => [...ALL_SOURCE_IDS]);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
 
@@ -39,6 +46,11 @@ export default function TargetDetailPage() {
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [saved, setSaved] = useState(false);
+
+  const reportItems = useQuery(
+    api.digestItems.listByDigestRun,
+    expandedReportId ? { digestRunId: expandedReportId } : "skip"
+  );
 
   useEffect(() => {
     if (target) {
@@ -95,12 +107,29 @@ export default function TargetDetailPage() {
   return (
     <div className="stack">
       <SignalOverlay open={!!overlayItem} item={overlayItem} onClose={() => setOverlayItem(null)} />
+      <SourceLinkOverlay open={!!sourceLinkOverlay} sourceLink={sourceLinkOverlay} onClose={() => setSourceLinkOverlay(null)} />
       <nav className="muted" style={{ fontSize: "0.9rem" }}>
         <Link href="/targets">Watch Targets</Link>
         <span style={{ margin: "0 0.5rem" }}>/</span>
         {target.displayName}
       </nav>
-      <h1 style={{ margin: 0 }}>{target.displayName}</h1>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem" }}>
+        <h1 style={{ margin: 0 }}>{target.displayName}</h1>
+        <Link
+          href={`/targets/${id}/timeline`}
+          style={{
+            fontSize: "0.9rem",
+            padding: "0.35rem 0.75rem",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            color: "#374151",
+            textDecoration: "none",
+            fontWeight: 500,
+          }}
+        >
+          Timeline view
+        </Link>
+      </div>
 
       <div className="stack" style={{ gap: "0.75rem" }}>
         <div className="card stack" style={{ padding: "0.75rem 1rem" }}>
@@ -394,38 +423,135 @@ export default function TargetDetailPage() {
       </section>
 
       <section className="card stack">
-        <h2 style={{ margin: 0 }}>Signals</h2>
+        <h2 style={{ margin: 0 }}>Source Links</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Digest signals for this watch target from past scans. Run a scan or comprehensive search to generate new ones.
+          Individual links from each source family (papers, filings, trials, etc.). Each has a summary and substantive content stored 1:1.
         </p>
-        {signals === undefined ? (
+        {sourceLinks === undefined ? (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
-        ) : signals.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>No signals yet. Run a scan or comprehensive search above.</p>
+        ) : sourceLinks.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No source links yet. Run a scan or comprehensive search above.</p>
         ) : (
           <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "1rem 0 0", gap: "0.75rem" }}>
-            {signals.map((item) => {
-              const digestItem: DigestItem = {
-                _id: item._id,
-                digestRunId: item.digestRunId,
-                watchTargetId: item.watchTargetId,
-                category: item.category,
-                significance: item.significance,
-                headline: item.headline,
-                synthesis: item.synthesis,
-                strategicImplication: item.strategicImplication,
-                sources: item.sources,
-                rawItemIds: item.rawItemIds,
-                reviewedAt: item.reviewedAt,
-                feedback: item.feedback,
-                feedbackAt: item.feedbackAt,
-              };
+            {sourceLinks.map((raw) => {
+              const dateStr = formatSourceDate(raw.source, raw.publishedAt ?? undefined, raw.metadata);
+              const summary = (raw.abstract ?? "").trim() || raw.title;
               return (
-                <li key={item._id}>
-                  <DigestItemCard
-                    item={digestItem}
-                    onOpenInOverlay={() => setOverlayItem(digestItem)}
-                  />
+                <li key={raw._id}>
+                  <article className="card stack" style={{ padding: "0.75rem 1rem" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
+                      <SourceBadge source={raw.source as import("@/lib/types").SourceType} />
+                      {dateStr && <span className="muted" style={{ fontSize: "0.85rem" }}>{dateStr}</span>}
+                    </div>
+                    <h3 style={{ margin: 0, fontSize: "1rem" }}>{raw.title}</h3>
+                    <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                      {summary.slice(0, 200)}{summary.length > 200 ? "…" : ""}
+                    </p>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <a href={raw.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.9rem", color: "#2563eb" }}>
+                        Open original ↗
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setSourceLinkOverlay(raw)}
+                        style={{
+                          fontSize: "0.9rem",
+                          padding: "0.25rem 0.5rem",
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          background: "transparent",
+                          cursor: "pointer",
+                          color: "#374151",
+                        }}
+                      >
+                        View substantive content
+                      </button>
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Signal Reports</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Reports at a given time that synthesize many source links into signals. Same set of links → same report (hash-deduped).
+        </p>
+        {signalReports === undefined ? (
+          <p className="muted" style={{ margin: 0 }}>Loading…</p>
+        ) : signalReports.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No signal reports yet. Run a scan to generate one.</p>
+        ) : (
+          <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "1rem 0 0", gap: "0.5rem" }}>
+            {signalReports.map((run) => {
+              const isExpanded = expandedReportId === run._id;
+              const items = isExpanded && reportItems ? reportItems : [];
+              return (
+                <li key={run._id}>
+                  <div className="card stack" style={{ padding: "0.75rem 1rem" }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedReportId(isExpanded ? null : run._id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        width: "100%",
+                        padding: 0,
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>
+                        {new Date(run.generatedAt).toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                      <span style={{ marginLeft: "0.5rem" }}>{isExpanded ? "▼" : "▶"}</span>
+                    </button>
+                    <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                      {run.executiveSummary} · {run.totalSignals} signal{run.totalSignals !== 1 ? "s" : ""}
+                    </p>
+                    {isExpanded && (
+                      <ul className="stack" style={{ listStyle: "none", padding: 0, marginTop: "0.75rem", gap: "0.75rem" }}>
+                        {items
+                          .filter((d) => d.watchTargetId === id)
+                          .map((item) => {
+                            const digestItem: DigestItem = {
+                              _id: item._id,
+                              digestRunId: item.digestRunId,
+                              watchTargetId: item.watchTargetId,
+                              category: item.category,
+                              significance: item.significance,
+                              headline: item.headline,
+                              synthesis: item.synthesis,
+                              strategicImplication: item.strategicImplication,
+                              sources: item.sources,
+                              rawItemIds: item.rawItemIds,
+                              reviewedAt: item.reviewedAt,
+                              feedback: item.feedback,
+                              feedbackAt: item.feedbackAt,
+                            };
+                            return (
+                              <li key={item._id}>
+                                <DigestItemCard
+                                  item={digestItem}
+                                  onOpenInOverlay={() => setOverlayItem(digestItem)}
+                                />
+                              </li>
+                            );
+                          })}
+                      </ul>
+                    )}
+                  </div>
                 </li>
               );
             })}

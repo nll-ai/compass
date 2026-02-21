@@ -1,5 +1,7 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
@@ -17,6 +19,33 @@ export const get = query({
   args: { id: v.id("digestRuns") },
   handler: async (ctx, { id }) => {
     return await ctx.db.get(id);
+  },
+});
+
+/** Find an existing Signal Report (digest run) by hash of its source links; used to avoid duplicate reports. */
+export const getBySourceLinksHash = query({
+  args: { sourceLinksHash: v.string() },
+  handler: async (ctx, { sourceLinksHash }) => {
+    return await ctx.db
+      .query("digestRuns")
+      .withIndex("by_sourceLinksHash", (q) => q.eq("sourceLinksHash", sourceLinksHash))
+      .first();
+  },
+});
+
+/** List Signal Reports (digest runs) that include this watch target, newest first. */
+export const listSignalReportsForTarget = query({
+  args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
+  handler: async (ctx, { watchTargetId, limit = 20 }) => {
+    const items = await ctx.db
+      .query("digestItems")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
+      .take(limit * 3);
+    const runIds = [...new Set(items.map((i) => i.digestRunId))];
+    const fetched = await Promise.all(runIds.map((runId: Id<"digestRuns">) => ctx.db.get(runId)));
+    const runs = fetched.filter((r): r is Doc<"digestRuns"> => r != null);
+    runs.sort((a, b) => b.generatedAt - a.generatedAt);
+    return runs.slice(0, limit);
   },
 });
 

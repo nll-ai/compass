@@ -10,9 +10,11 @@
 
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
+import type * as digestGenerate from "../digestGenerate.js";
 import type * as digestItems from "../digestItems.js";
 import type * as digestRuns from "../digestRuns.js";
 import type * as digests from "../digests.js";
+import type * as lib_digestHelpers from "../lib/digestHelpers.js";
 import type * as lib_formatters from "../lib/formatters.js";
 import type * as lib_slack_builder from "../lib/slack_builder.js";
 import type * as lib_sourceIds from "../lib/sourceIds.js";
@@ -41,9 +43,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   chat: typeof chat;
   crons: typeof crons;
+  digestGenerate: typeof digestGenerate;
   digestItems: typeof digestItems;
   digestRuns: typeof digestRuns;
   digests: typeof digests;
+  "lib/digestHelpers": typeof lib_digestHelpers;
   "lib/formatters": typeof lib_formatters;
   "lib/slack_builder": typeof lib_slack_builder;
   "lib/sourceIds": typeof lib_sourceIds;

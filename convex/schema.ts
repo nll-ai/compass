@@ -102,9 +102,12 @@ export default defineSchema({
     slackTs: v.optional(v.string()),
     slackError: v.optional(v.string()),
     generationTokens: v.optional(v.number()),
+    /** Hash of the set of source link (raw item) IDs in this report; used to avoid duplicate reports. */
+    sourceLinksHash: v.optional(v.string()),
   })
     .index("by_generatedAt", ["generatedAt"])
-    .index("by_scanRun", ["scanRunId"]),
+    .index("by_scanRun", ["scanRunId"])
+    .index("by_sourceLinksHash", ["sourceLinksHash"]),
 
   digestItems: defineTable({
     digestRunId: v.id("digestRuns"),

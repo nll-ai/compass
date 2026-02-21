@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
@@ -224,17 +225,29 @@ export async function POST(request: Request) {
       env.OPENAI_API_KEY,
       feedbackContext
     );
-    await client.mutation(api.digests.createDigestRunWithItemsFromServer, {
-      secret: effectiveSecret,
-      scanRunId,
-      period: (scan?.period as "daily" | "weekly") ?? "daily",
-      executiveSummary: payload.executiveSummary,
-      criticalCount: payload.criticalCount,
-      highCount: payload.highCount,
-      mediumCount: payload.mediumCount,
-      lowCount: payload.lowCount,
-      items: payload.items,
-    });
+    const rawItemIds = payload.items.flatMap((i) => i.rawItemIds);
+    const sourceLinksHash =
+      rawItemIds.length > 0
+        ? createHash("sha256").update([...rawItemIds].sort().join(",")).digest("hex")
+        : undefined;
+    const existingReport =
+      sourceLinksHash != null
+        ? await client.query(api.digestRuns.getBySourceLinksHash, { sourceLinksHash })
+        : null;
+    if (!existingReport) {
+      await client.mutation(api.digests.createDigestRunWithItemsFromServer, {
+        secret: effectiveSecret,
+        scanRunId,
+        period: (scan?.period as "daily" | "weekly") ?? "daily",
+        executiveSummary: payload.executiveSummary,
+        criticalCount: payload.criticalCount,
+        highCount: payload.highCount,
+        mediumCount: payload.mediumCount,
+        lowCount: payload.lowCount,
+        items: payload.items,
+        sourceLinksHash,
+      });
+    }
   }
 
   return NextResponse.json({ ok: true, scanRunId, totalFound, newFound, failedSources: Object.keys(failedSources).length ? failedSources : undefined });
