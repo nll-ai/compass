@@ -8,7 +8,9 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { DigestItemCard } from "@/components/compass/DigestItemCard";
 import { SignalOverlay } from "@/components/compass/SignalOverlay";
+import { SourceSelector } from "@/components/compass/SourceSelector";
 import type { DigestItem } from "@/lib/types";
+import { ALL_SOURCE_IDS, getSourceLabel, type SourceId } from "@/lib/sources/registry";
 
 export default function TargetDetailPage() {
   const params = useParams();
@@ -24,6 +26,8 @@ export default function TargetDetailPage() {
   const [scanningComprehensive, setScanningComprehensive] = useState(false);
   const [formCollapsed, setFormCollapsed] = useState(true);
   const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<SourceId[]>(() => [...ALL_SOURCE_IDS]);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -98,22 +102,50 @@ export default function TargetDetailPage() {
       </nav>
       <h1 style={{ margin: 0 }}>{target.displayName}</h1>
 
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          type="button"
-          disabled={scanning}
-          onClick={async () => {
-            setScanning(true);
-            try {
-              await fetch("/api/scan", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ period: "daily", targetIds: [id] }),
-              });
-            } finally {
-              setScanning(false);
-            }
-          }}
+      <div className="stack" style={{ gap: "0.75rem" }}>
+        <div className="card stack" style={{ padding: "0.75rem 1rem" }}>
+          <SourceSelector
+            selected={selectedSourceIds}
+            onChange={setSelectedSourceIds}
+            disabled={scanning || scanningComprehensive}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={async () => {
+              setScanning(true);
+              setScanMessage(null);
+              try {
+                const res = await fetch("/api/scan", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    period: "daily",
+                    targetIds: [id],
+                    sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+                  }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && typeof data.totalFound === "number") {
+                  const newCount = typeof data.newFound === "number" ? data.newFound : 0;
+                  const failed = data.failedSources as Record<string, string> | undefined;
+                  let msg =
+                    newCount > 0
+                      ? `Scan finished. ${data.totalFound} items found, ${newCount} new. Digest updated.`
+                      : `Scan finished. ${data.totalFound} items found, 0 new (no digest).`;
+                  if (failed && Object.keys(failed).length > 0) {
+                    const parts = Object.entries(failed).map(([src, err]) => `${getSourceLabel(src as SourceId)}: ${err}`);
+                    msg += " " + parts.join(" ");
+                  }
+                  setScanMessage(msg);
+                  setTimeout(() => setScanMessage(null), 15000);
+                }
+              } finally {
+                setScanning(false);
+              }
+            }}
           style={{
             padding: "0.5rem 1rem",
             borderRadius: 8,
@@ -145,18 +177,39 @@ export default function TargetDetailPage() {
         <button
           type="button"
           disabled={scanningComprehensive}
-          onClick={async () => {
-            setScanningComprehensive(true);
-            try {
-              await fetch("/api/scan", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ period: "daily", targetIds: [id], mode: "comprehensive" }),
-              });
-            } finally {
-              setScanningComprehensive(false);
-            }
-          }}
+            onClick={async () => {
+              setScanningComprehensive(true);
+              setScanMessage(null);
+              try {
+                const res = await fetch("/api/scan", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    period: "daily",
+                    targetIds: [id],
+                    mode: "comprehensive",
+                    sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+                  }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && typeof data.totalFound === "number") {
+                  const newCount = typeof data.newFound === "number" ? data.newFound : 0;
+                  const failed = data.failedSources as Record<string, string> | undefined;
+                  let msg =
+                    newCount > 0
+                      ? `Scan finished. ${data.totalFound} items found, ${newCount} new. Digest updated.`
+                      : `Scan finished. ${data.totalFound} items found, 0 new (no digest).`;
+                  if (failed && Object.keys(failed).length > 0) {
+                    const parts = Object.entries(failed).map(([src, err]) => `${getSourceLabel(src as SourceId)}: ${err}`);
+                    msg += " " + parts.join(" ");
+                  }
+                  setScanMessage(msg);
+                  setTimeout(() => setScanMessage(null), 15000);
+                }
+              } finally {
+                setScanningComprehensive(false);
+              }
+            }}
           style={{
             padding: "0.5rem 1rem",
             borderRadius: 8,
@@ -189,6 +242,12 @@ export default function TargetDetailPage() {
         <Link href="/" className="muted" style={{ fontSize: "0.9rem" }}>
           View recent scans on Dashboard →
         </Link>
+        {scanMessage && (
+          <p className="muted" style={{ margin: 0, fontSize: "0.875rem" }}>
+            {scanMessage}
+          </p>
+        )}
+        </div>
       </div>
 
       <section className="card stack">
@@ -293,14 +352,18 @@ export default function TargetDetailPage() {
           />
         </label>
         <label>
-          <span className="muted" style={{ fontSize: "0.85rem" }}>Notes</span>
+          <span className="muted" style={{ fontSize: "0.85rem" }}>What are you looking to monitor?</span>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
+            placeholder="e.g. trial readouts, discontinuations, pipeline changes, competitor moves"
             className="card"
             style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
           />
+          <span className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem", display: "block" }}>
+            This guides which signals we surface—only items that help answer this get shown.
+          </span>
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <input

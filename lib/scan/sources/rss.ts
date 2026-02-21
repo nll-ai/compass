@@ -1,9 +1,8 @@
-import type { SourceResult, ScanOptions } from "../types";
+import type { SourceResult } from "../types";
+import type { SourceAgentContext } from "../agent-context";
+import { runRssAgent } from "./rss-agent";
 
-export async function runRss(
-  _targets?: unknown,
-  _env?: Record<string, string | undefined>,
-  _options?: ScanOptions
-): Promise<SourceResult> {
-  return { items: [] };
+export async function runRss(context: SourceAgentContext): Promise<SourceResult> {
+  if (context.targets.length === 0) return { items: [] };
+  return runRssAgent(context, { maxSteps: 3 });
 }

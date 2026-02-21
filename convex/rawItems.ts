@@ -117,6 +117,23 @@ export const getNewByScanRunFromServer = query({
   },
 });
 
+/** Return existing external IDs per source so agents can prioritize items not yet in signals. */
+export const getExistingExternalIdsFromServer = query({
+  args: { secret: v.string(), sources: v.array(v.string()) },
+  handler: async (ctx, { secret, sources }) => {
+    if (!checkSecret(secret)) return {} as Record<string, string[]>;
+    const out: Record<string, string[]> = {};
+    for (const source of sources) {
+      const items = await ctx.db
+        .query("rawItems")
+        .filter((q) => q.eq(q.field("source"), source))
+        .collect();
+      out[source] = [...new Set(items.map((i) => i.externalId))];
+    }
+    return out;
+  },
+});
+
 /** List stored scan results (raw items) for a watch target, newest first. */
 export const listByWatchTarget = query({
   args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },

@@ -21,6 +21,8 @@ export interface ScanTarget {
   type?: "drug" | "target" | "company";
   indication?: string;
   company?: string;
+  /** What the user wants to monitor for this target (guides retrieval and relevance). */
+  notes?: string;
   /** Phrases to add to search queries, derived from user feedback. */
   learnedQueryTerms?: string[];
   /** Terms to exclude from search, derived from user feedback. */

@@ -1,5 +1,7 @@
 import type { ScanTarget, SourceResult, ScanOptions, TherapeuticArea } from "../types";
+import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
+import { runPubMedAgent } from "./pubmed-agent";
 
 /** PubMed: 3/sec without key, 10/sec with API key. Throttle ~100–350ms between requests in comprehensive. */
 const THROTTLE_MS_COMPREHENSIVE = 200;
@@ -28,85 +30,96 @@ function buildPubmedQuery(target: ScanTarget): string {
   return `(${core}) AND ${scope}${notClause}`;
 }
 
-export async function runPubmed(
-  targets: ScanTarget[],
-  env: { PUBMED_API_KEY?: string },
-  options?: ScanOptions
-): Promise<SourceResult> {
+/**
+ * Procedural PubMed path: build query per target, esearch + esummary + optional efetch.
+ * Used only as fallback when the agent returns no items.
+ */
+async function runPubmedProcedural(context: SourceAgentContext): Promise<SourceResult> {
+  const { targets, env, scanOptions: options } = context;
   const apiKey = env.PUBMED_API_KEY;
   const items: SourceResult["items"] = [];
   const retmax = getRetmax(options);
   const throttleMs = options?.mode === "comprehensive" ? THROTTLE_MS_COMPREHENSIVE : 0;
 
-  try {
-    for (const target of targets) {
-      if (throttleMs > 0) await sleep(throttleMs);
-      const query = buildPubmedQuery(target);
-      if (!query) continue;
-      const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
-      const searchRes = await fetchWithRetry(searchUrl);
-      if (!searchRes.ok) {
-        if (items.length > 0) {
-          return { items, error: `PubMed esearch: ${searchRes.status}` };
-        }
-        return { items: [], error: `PubMed esearch: ${searchRes.status}` };
-      }
-      if (throttleMs > 0) await sleep(throttleMs);
-      const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-      const idlist = searchData.esearchresult?.idlist ?? [];
-      if (idlist.length === 0) continue;
+  for (const target of targets) {
+    if (throttleMs > 0) await sleep(throttleMs);
+    const query = buildPubmedQuery(target);
+    if (!query) continue;
+    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
+    const searchRes = await fetchWithRetry(searchUrl);
+    if (!searchRes.ok) {
+      if (items.length > 0) return { items, error: `PubMed esearch: ${searchRes.status}` };
+      return { items: [], error: `PubMed esearch: ${searchRes.status}` };
+    }
+    if (throttleMs > 0) await sleep(throttleMs);
+    const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
+    const idlist = searchData.esearchresult?.idlist ?? [];
+    if (idlist.length === 0) continue;
 
-      const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idlist.join(",")}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
-      const summaryRes = await fetchWithRetry(summaryUrl);
-      if (!summaryRes.ok) {
-        if (items.length > 0) {
-          return { items, error: `PubMed esummary: ${summaryRes.status}` };
-        }
-        return { items: [], error: `PubMed esummary: ${summaryRes.status}` };
-      }
-      const summaryData = (await summaryRes.json()) as {
-        result?: Record<string, { title?: string; pubdate?: string; sortpubdate?: string }>;
-      };
-      const result = summaryData.result ?? {};
+    const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idlist.join(",")}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
+    const summaryRes = await fetchWithRetry(summaryUrl);
+    if (!summaryRes.ok) {
+      if (items.length > 0) return { items, error: `PubMed esummary: ${summaryRes.status}` };
+      return { items: [], error: `PubMed esummary: ${summaryRes.status}` };
+    }
+    const summaryData = (await summaryRes.json()) as {
+      result?: Record<string, { title?: string; pubdate?: string; sortpubdate?: string }>;
+    };
+    const result = summaryData.result ?? {};
 
-      // Fetch abstracts so we can show "content from original page" in the UI
-      let abstractByPmid: Record<string, string> = {};
-      if (idlist.length > 0) {
-        if (throttleMs > 0) await sleep(throttleMs);
-        const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${idlist.join(",")}&rettype=abstract&retmode=text${apiKey ? `&api_key=${apiKey}` : ""}`;
-        const fetchRes = await fetchWithRetry(fetchUrl);
-        if (fetchRes.ok) {
-          const text = await fetchRes.text();
-          const blocks = text.split(/\n\nPMID: (\d+) \[Indexed for MEDLINE\]/);
-          for (let i = 1; i < blocks.length; i += 2) {
-            const pmid = blocks[i];
-            const block = blocks[i - 1]?.trim() ?? "";
-            if (pmid && block) abstractByPmid[pmid] = block;
-          }
-        }
-      }
-
-      for (const pmid of idlist) {
-        const entry = result[pmid];
-        const title = entry?.title?.trim() || `PubMed ${pmid}`;
-        const pubdate = entry?.pubdate;
-        const sortpubdate = entry?.sortpubdate;
-        let publishedAt: number | undefined =
-          sortpubdate != null ? new Date(sortpubdate.replace(" ", "T")).getTime() : undefined;
-        if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
-        items.push({
-          watchTargetId: target._id,
-          externalId: pmid,
-          title,
-          url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
-          abstract: abstractByPmid[pmid],
-          publishedAt,
-          metadata: pubdate != null ? { pubdate } : {},
-        });
+    let abstractByPmid: Record<string, string> = {};
+    if (throttleMs > 0) await sleep(throttleMs);
+    const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${idlist.join(",")}&rettype=abstract&retmode=text${apiKey ? `&api_key=${apiKey}` : ""}`;
+    const fetchRes = await fetchWithRetry(fetchUrl);
+    if (fetchRes.ok) {
+      const text = await fetchRes.text();
+      const blocks = text.split(/\n\nPMID: (\d+) \[Indexed for MEDLINE\]/);
+      for (let i = 1; i < blocks.length; i += 2) {
+        const pmid = blocks[i];
+        const block = blocks[i - 1]?.trim() ?? "";
+        if (pmid && block) abstractByPmid[pmid] = block;
       }
     }
-    return { items };
+
+    for (const pmid of idlist) {
+      const entry = result[pmid];
+      const title = entry?.title?.trim() || `PubMed ${pmid}`;
+      const pubdate = entry?.pubdate;
+      const sortpubdate = entry?.sortpubdate;
+      let publishedAt: number | undefined =
+        sortpubdate != null ? new Date(sortpubdate.replace(" ", "T")).getTime() : undefined;
+      if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
+      items.push({
+        watchTargetId: target._id,
+        externalId: pmid,
+        title,
+        url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+        abstract: abstractByPmid[pmid],
+        publishedAt,
+        metadata: pubdate != null ? { pubdate } : {},
+      });
+    }
+  }
+  return { items };
+}
+
+export async function runPubmed(context: SourceAgentContext): Promise<SourceResult> {
+  const { targets, env } = context;
+
+  try {
+    // Agent in charge: run agentic search first (LLM + tools).
+    const agentResult =
+      targets.length > 0 && env.OPENAI_API_KEY
+        ? await runPubMedAgent(context, { maxSteps: 5 })
+        : { items: [] };
+
+    if (agentResult.items.length > 0) {
+      return agentResult;
+    }
+
+    // Fallback: when agent returns nothing, use procedural PubMed path.
+    return await runPubmedProcedural(context);
   } catch (err) {
-    return { items, error: err instanceof Error ? err.message : String(err) };
+    return { items: [], error: err instanceof Error ? err.message : String(err) };
   }
 }

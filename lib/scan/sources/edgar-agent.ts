@@ -6,12 +6,75 @@
 import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import type { RawItemInput, ScanTarget } from "../types";
-import { fetchWithRetry } from "../fetchWithRetry";
+import type { RawItemInput, ScanTarget, SourceResult } from "../types";
+import type { SourceAgentContext } from "../agent-context";
+import { fetchWithRetry, sleep } from "../fetchWithRetry";
 
-const SEC_USER_AGENT = "Compass competitive intelligence app (contact via GitHub)";
+const SEC_USER_AGENT_DEFAULT = "Compass competitive intelligence app (contact via GitHub)";
 const EFTS_BASE = "https://efts.sec.gov/LATEST/search-index";
+
+function getSECUserAgent(): string {
+  return process.env.SEC_EDGAR_USER_AGENT?.trim() || SEC_USER_AGENT_DEFAULT;
+}
+
+const SEC_403_MESSAGE =
+  " If this is 403, SEC requires a declared User-Agent (see https://www.sec.gov/developer). Set SEC_EDGAR_USER_AGENT in your env to a value SEC accepts (e.g. \"YourCompany AdminContact@yourcompany.com\").";
 const FORMS_WE_WANT = ["10-K", "10-Q"];
+
+/** Max chars of filing text to send to the summarizer (10-K/10-Q are large). */
+const FILING_EXCERPT_MAX_CHARS = 18_000;
+/** How many filings to fetch and summarize (most recent by file date). */
+const MAX_FILINGS_TO_SUMMARIZE = 30;
+/** Delay between SEC document fetches to respect rate limits. */
+const SEC_FETCH_DELAY_MS = 1200;
+/** How many filings to summarize in parallel (balance speed vs SEC rate limits). */
+const SUMMARIZE_PARALLEL = 3;
+
+/** Strip HTML to plain text and truncate. */
+function htmlToPlainText(html: string, maxChars: number): string {
+  let text = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length > maxChars) text = text.slice(0, maxChars) + "…";
+  return text;
+}
+
+/** Fetch SEC filing document and return plain-text excerpt for summarization. */
+async function fetchFilingText(url: string): Promise<string> {
+  const res = await fetchWithRetry(url, {
+    headers: { "User-Agent": getSECUserAgent(), Accept: "text/html" },
+  });
+  if (!res.ok) return "";
+  const html = await res.text();
+  return htmlToPlainText(html, FILING_EXCERPT_MAX_CHARS);
+}
+
+/** Use LLM to extract 1–3 sentences about the watch target(s) from an SEC filing excerpt. */
+async function summarizeFilingForTargets(
+  filingExcerpt: string,
+  form: string,
+  fileDate: string,
+  targetNames: string[],
+  openaiKey: string | undefined
+): Promise<string> {
+  if (!openaiKey || !filingExcerpt.trim() || targetNames.length === 0) return "";
+  const targetList = targetNames.slice(0, 5).join(", ");
+  const { text } = await generateText({
+    model: openai("gpt-4o-mini"),
+    prompt: `You are an analyst summarizing SEC filings for competitive intelligence. Below is an excerpt from a ${form} filed ${fileDate}.
+
+Watch targets of interest: ${targetList}
+
+Excerpt:
+${filingExcerpt.slice(0, 14_000)}
+
+Task: In 1–3 sentences, state what this filing discloses about any of the watch targets (e.g. trial status, discontinuation, pipeline, material events). If there is no relevant disclosure about these targets, reply with exactly: "No specific disclosure about the watch targets in this excerpt." Keep the response concise and factual.`,
+  });
+  return (text ?? "").trim();
+}
 
 interface CompanyTickerEntry {
   cik_str: number;
@@ -61,7 +124,11 @@ interface EFTSSearchResult {
 export async function searchSECFullTextAPI(
   query: string,
   options: { start?: number; count?: number; startDate?: string; endDate?: string; forms?: string[] } = {}
-): Promise<{ hits: Array<{ title: string; url: string; fileDate: string; form: string; companyName: string; adsh: string; cik: string }>; total: number }> {
+): Promise<{
+  hits: Array<{ title: string; url: string; fileDate: string; form: string; companyName: string; adsh: string; cik: string }>;
+  total: number;
+  error?: string;
+}> {
   const { start = 0, count = 20, startDate, endDate, forms = FORMS_WE_WANT } = options;
   const params = new URLSearchParams();
   params.set("q", query);
@@ -74,11 +141,12 @@ export async function searchSECFullTextAPI(
 
   const url = `${EFTS_BASE}?${params.toString()}`;
   const res = await fetchWithRetry(url, {
-    headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" },
+    headers: { "User-Agent": getSECUserAgent(), Accept: "application/json" },
   });
 
   if (!res.ok) {
-    return { hits: [], total: 0 };
+    const error = `SEC EDGAR full-text search returned ${res.status}.${res.status === 403 ? SEC_403_MESSAGE : ""}`;
+    return { hits: [], total: 0, error };
   }
 
   const data = (await res.json()) as EFTSSearchResult;
@@ -125,15 +193,21 @@ export async function searchSECFullTextAPI(
 export async function searchSECByCompanyAPI(
   companyOrTicker: string,
   options: { maxFilings?: number } = {}
-): Promise<{ hits: Array<{ title: string; url: string; fileDate: string; form: string; companyName: string; adsh: string; cik: string }> }> {
+): Promise<{
+  hits: Array<{ title: string; url: string; fileDate: string; form: string; companyName: string; adsh: string; cik: string }>;
+  error?: string;
+}> {
   const { maxFilings = 25 } = options;
   const term = companyOrTicker.trim().toLowerCase();
   if (!term) return { hits: [] };
 
   const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
-    headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" },
+    headers: { "User-Agent": getSECUserAgent(), Accept: "application/json" },
   });
-  if (!res.ok) return { hits: [] };
+  if (!res.ok) {
+    const error = `SEC EDGAR company list returned ${res.status}.${res.status === 403 ? SEC_403_MESSAGE : ""}`;
+    return { hits: [], error };
+  }
 
   const data = (await res.json()) as Record<string, CompanyTickerEntry>;
   const companies = Object.values(data);
@@ -147,9 +221,12 @@ export async function searchSECByCompanyAPI(
   const cikPadded = padCik(match.cik_str);
   const subRes = await fetchWithRetry(
     `https://data.sec.gov/submissions/CIK${cikPadded}.json`,
-    { headers: { "User-Agent": SEC_USER_AGENT, Accept: "application/json" } }
+    { headers: { "User-Agent": getSECUserAgent(), Accept: "application/json" } }
   );
-  if (!subRes.ok) return { hits: [] };
+  if (!subRes.ok) {
+    const error = `SEC EDGAR submissions returned ${subRes.status}.${subRes.status === 403 ? SEC_403_MESSAGE : ""}`;
+    return { hits: [], error };
+  }
 
   const sub = (await subRes.json()) as { filings?: { recent?: SubmissionsRecent }; recent?: SubmissionsRecent };
   const recent = sub.filings?.recent ?? sub.recent;
@@ -194,18 +271,45 @@ export interface SECAgentHit {
 }
 
 /**
+ * Run the SEC EDGAR source agent: receives orchestrator context (mission, targets, env),
+ * performs agentic search with tools (full-text search + company lookup), returns SourceResult.
+ */
+export async function runEdgarAgent(
+  context: SourceAgentContext,
+  options: { maxSteps?: number; fullTextCount?: number } = {}
+): Promise<SourceResult> {
+  const { items, error } = await runSECSearchAgent(
+    context.targets,
+    context.env.OPENAI_API_KEY,
+    {
+      ...options,
+      mission: context.mission,
+      existingExternalIds: context.existingExternalIdsBySource?.edgar,
+    }
+  );
+  return { items, error };
+}
+
+/**
  * Run the SEC search subagent: LLM with tools that can call full-text search and company lookup,
  * with query expansion. Returns collected SEC filings as RawItemInput[].
  */
 export async function runSECSearchAgent(
   targets: ScanTarget[],
   openaiKey: string | undefined,
-  options: { maxSteps?: number; fullTextCount?: number } = {}
-): Promise<RawItemInput[]> {
-  const { maxSteps = 5, fullTextCount = 15 } = options;
-  if (!openaiKey || targets.length === 0) return [];
+  options: {
+    maxSteps?: number;
+    fullTextCount?: number;
+    mission?: string;
+    /** External IDs already stored for this source; prioritize summarizing filings not in this set. */
+    existingExternalIds?: Set<string>;
+  } = {}
+): Promise<{ items: RawItemInput[]; error?: string }> {
+  const { maxSteps = 5, fullTextCount = 15, mission, existingExternalIds } = options;
+  if (!openaiKey || targets.length === 0) return { items: [] };
 
   const collectedHits = new Map<string, SECAgentHit>();
+  let lastSECError: string | undefined;
 
   function recordHits(hits: SECAgentHit[]) {
     for (const h of hits) {
@@ -213,16 +317,26 @@ export async function runSECSearchAgent(
     }
   }
 
-  // Use target.company for every target that has it: run company lookup before the agent so agentic SEC search reliably uses this improvement.
+  // Pre-seed with full-text search by target name so we always get filings that mention the program (e.g. "GEN-003" → Genocea 10-K/10-Qs). This is the most reliable path: SEC full-text index finds documents containing the name.
+  for (const target of targets) {
+    const name = target.name?.trim();
+    if (!name || name.length < 2) continue;
+    const result = await searchSECFullTextAPI(name, {
+      start: 0,
+      count: fullTextCount,
+      forms: FORMS_WE_WANT,
+    });
+    if (result.error) lastSECError = result.error;
+    recordHits(result.hits);
+  }
+
+  // Pre-seed with company lookup when target.company is set (company list + submissions API).
   for (const target of targets) {
     const company = target.company?.trim();
     if (!company) continue;
-    try {
-      const { hits } = await searchSECByCompanyAPI(company, { maxFilings: 25 });
-      recordHits(hits);
-    } catch {
-      // Ignore per-company errors (e.g. not in SEC list)
-    }
+    const result = await searchSECByCompanyAPI(company, { maxFilings: 25 });
+    if (result.error) lastSECError = result.error;
+    recordHits(result.hits);
   }
 
   const searchSECFullText = tool({
@@ -235,15 +349,16 @@ export async function runSECSearchAgent(
       forms: z.array(z.string()).optional().describe("Form types, e.g. ['10-K','10-Q']"),
     }),
     execute: async ({ query, startDate, endDate, forms }) => {
-      const { hits } = await searchSECFullTextAPI(query, {
+      const result = await searchSECFullTextAPI(query, {
         start: 0,
         count: fullTextCount,
         startDate,
         endDate,
         forms: forms?.length ? forms : FORMS_WE_WANT,
       });
-      recordHits(hits);
-      return { total: hits.length, hits: hits.slice(0, 10), message: `Found ${hits.length} filings. Use searchSECByCompany for a specific company's filings.` };
+      if (result.error) lastSECError = result.error;
+      recordHits(result.hits);
+      return { total: result.hits.length, hits: result.hits.slice(0, 10), message: `Found ${result.hits.length} filings. Use searchSECByCompany for a specific company's filings.` };
     },
   });
 
@@ -254,9 +369,10 @@ export async function runSECSearchAgent(
       companyOrTicker: z.string().describe("Company name or stock ticker symbol"),
     }),
     execute: async ({ companyOrTicker }) => {
-      const { hits } = await searchSECByCompanyAPI(companyOrTicker, { maxFilings: 25 });
-      recordHits(hits);
-      return { total: hits.length, hits: hits.slice(0, 10), message: `Found ${hits.length} filings for ${companyOrTicker}.` };
+      const result = await searchSECByCompanyAPI(companyOrTicker, { maxFilings: 25 });
+      if (result.error) lastSECError = result.error;
+      recordHits(result.hits);
+      return { total: result.hits.length, hits: result.hits.slice(0, 10), message: `Found ${result.hits.length} filings for ${companyOrTicker}.` };
     },
   });
 
@@ -267,14 +383,16 @@ export async function runSECSearchAgent(
     )
     .join("\n");
 
-  const prompt = `You are an SEC EDGAR search specialist for biopharma competitive intelligence. For each watch target below, find relevant SEC 10-K and 10-Q filings (pipeline updates, trial discontinuations, material business changes).
+  const missionBlock = mission ? `Mission: ${mission}\n\n` : "";
+
+  const prompt = `${missionBlock}You are an SEC EDGAR search specialist for biopharma competitive intelligence. For each watch target below, find relevant SEC 10-K and 10-Q filings (pipeline updates, trial discontinuations, material business changes).
 
 Watch targets:
 ${targetSummary}
 
-You must use both approaches:
-1. Full-text search: Call searchSECFullText with queries that combine the program/drug name (or target.name) with phrases like "discontinued", "clinical trial", "terminated", or the company name. Use quoted phrases for exact match. Use date ranges (e.g. startDate 2015-01-01, endDate 2024-12-31) and forms 10-K, 10-Q when relevant.
-2. Company lookup: For any target that has a "company" value above, call searchSECByCompany with that company name or ticker (from aliases) to get that company's 10-K/10-Q filings. Company lookups may already have been run for some targets; call again if you want to ensure coverage or use a ticker from aliases.
+Baseline: Full-text search by each target's name (e.g. GEN-003) and company lookups for targets with a company have already been run. You should expand coverage by:
+1. Full-text search: Call searchSECFullText with queries that combine the program/drug name (target.name) with phrases like "discontinued", "clinical trial", "terminated", or the company name. The most effective query is often the exact program name (e.g. "GEN-003"). Use quoted phrases for exact match. Use date ranges (e.g. startDate 2015-01-01, endDate 2024-12-31) and forms 10-K, 10-Q when relevant.
+2. Company lookup: For targets with a "company" value, call searchSECByCompany with that company name or ticker to get additional 10-K/10-Q filings. Call again with ticker from aliases if you want more coverage.
 
 Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text queries and company lookups). After a few tool calls, summarize briefly.`;
 
@@ -298,7 +416,45 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     // Agent failure: return what we collected so far (may be empty)
   }
 
-  // Map collected hits to RawItemInput with best-effort watchTargetId
+  // Enrich latest filings not yet in signals: sort by date (newest first), skip already-stored, take top N for fetch+summarize
+  const adshToAbstract = new Map<string, string>();
+  const sortedHits = [...collectedHits.values()].sort((a, b) => {
+    const da = a.fileDate || "";
+    const db = b.fileDate || "";
+    return db.localeCompare(da);
+  });
+  const notYetStored = existingExternalIds
+    ? sortedHits.filter((h) => !existingExternalIds.has(h.adsh))
+    : sortedHits;
+  const toSummarize = notYetStored.slice(0, MAX_FILINGS_TO_SUMMARIZE);
+  const targetNames = targets.map((t) => t.name).filter(Boolean);
+
+  for (let i = 0; i < toSummarize.length; i += SUMMARIZE_PARALLEL) {
+    const chunk = toSummarize.slice(i, i + SUMMARIZE_PARALLEL);
+    await Promise.all(
+      chunk.map(async (hit) => {
+        await sleep(SEC_FETCH_DELAY_MS);
+        try {
+          const text = await fetchFilingText(hit.url);
+          if (!text) return;
+          const summary = await summarizeFilingForTargets(
+            text,
+            hit.form,
+            hit.fileDate ?? "",
+            targetNames,
+            openaiKey
+          );
+          if (summary && !summary.toLowerCase().includes("no specific disclosure")) {
+            adshToAbstract.set(hit.adsh, summary);
+          }
+        } catch {
+          // Skip this filing on fetch/summary failure
+        }
+      })
+    );
+  }
+
+  // Map collected hits to RawItemInput with best-effort watchTargetId and parsed abstract
   const items: RawItemInput[] = [];
   for (const hit of collectedHits.values()) {
     const companyNameLower = hit.companyName.toLowerCase();
@@ -321,11 +477,15 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
       externalId: hit.adsh,
       title: hit.title,
       url: hit.url,
-      abstract: undefined,
+      abstract: adshToAbstract.get(hit.adsh),
       publishedAt: hit.fileDate ? new Date(hit.fileDate).getTime() : undefined,
       metadata: { cik: hit.cik, form: hit.form, company: hit.companyName, source: "edgar_agent" },
     });
   }
 
-  return items;
+  // When we have 0 items, surface SEC API error so the user sees why (e.g. 403 User-Agent).
+  if (items.length === 0 && lastSECError) {
+    return { items: [], error: lastSECError };
+  }
+  return { items };
 }

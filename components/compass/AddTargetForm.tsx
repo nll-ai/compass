@@ -43,6 +43,7 @@ export function AddTargetForm({
   const [therapeuticArea, setTherapeuticArea] = useState<"cardiovascular" | "oncology" | "other">("cardiovascular");
   const [indication, setIndication] = useState("");
   const [company, setCompany] = useState("");
+  const [notes, setNotes] = useState("");
 
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +90,7 @@ export function AddTargetForm({
       aliases,
       indication: indication.trim() || undefined,
       company: company.trim() || undefined,
+      notes: notes.trim() || undefined,
       active: true,
     });
     setTrackQuery("");
@@ -99,6 +101,7 @@ export function AddTargetForm({
     setAliasesStr("");
     setIndication("");
     setCompany("");
+    setNotes("");
     onAdded?.();
   };
 
@@ -112,6 +115,7 @@ export function AddTargetForm({
     setAliasesStr("");
     setIndication("");
     setCompany("");
+    setNotes("");
   };
 
   return (
@@ -228,6 +232,17 @@ export function AddTargetForm({
                 type="text"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
+                className="card"
+                style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
+              />
+            </label>
+            <label>
+              <span className="muted" style={{ fontSize: "0.85rem" }}>What are you looking to monitor? (optional)</span>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="e.g. trial readouts, discontinuations, pipeline changes"
                 className="card"
                 style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
               />

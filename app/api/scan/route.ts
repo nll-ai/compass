@@ -3,6 +3,8 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { runAllSources } from "../../../lib/scan/sources";
+import { filterRelevantItems } from "../../../lib/scan/relevance-filter";
+import { enrichMissingSummaries } from "../../../lib/scan/summary-enrichment";
 import { ALL_SOURCE_IDS } from "../../../lib/sources/registry";
 import { generateDigest } from "../../../lib/scan/digest";
 import type { ScanOptions, ScanTarget } from "../../../lib/scan/types";
@@ -52,13 +54,14 @@ export async function POST(request: Request) {
       period: "daily" | "weekly";
       targetIds?: string[];
       mode?: "latest" | "comprehensive";
+      sources?: string[];
     };
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const { scanRunId: bodyScanRunId, period, targetIds, mode } = body;
+    const { scanRunId: bodyScanRunId, period, targetIds, mode, sources: bodySources } = body;
     if (!period || (period !== "daily" && period !== "weekly")) {
       return NextResponse.json({ error: "period required: daily | weekly" }, { status: 400 });
     }
@@ -66,6 +69,12 @@ export async function POST(request: Request) {
     const scanOptions: ScanOptions = { mode: scanMode };
 
     const client = new ConvexHttpClient(convexUrl);
+
+  const sourceIdsToRun =
+    bodySources?.length &&
+    bodySources.every((s) => ALL_SOURCE_IDS.includes(s as (typeof ALL_SOURCE_IDS)[number]))
+      ? (bodySources as (typeof ALL_SOURCE_IDS)[number][])
+      : undefined;
 
   let scanRunId: Id<"scanRuns">;
   if (bodyScanRunId) {
@@ -76,6 +85,7 @@ export async function POST(request: Request) {
       secret: effectiveSecret,
       period,
       targetIds: ids,
+      sourceIds: sourceIdsToRun,
     });
   }
 
@@ -83,13 +93,15 @@ export async function POST(request: Request) {
     ? await client.query(api.watchTargets.getByIds, { ids: targetIds as Id<"watchTargets">[] })
     : await client.query(api.watchTargets.listActive, {});
 
+  const sourcesRan = sourceIdsToRun ?? [...ALL_SOURCE_IDS];
+
   if (targets.length === 0) {
     await client.mutation(api.scans.updateScanStatusFromServer, {
       secret: effectiveSecret,
       scanRunId,
       status: "completed",
       completedAt: Date.now(),
-      sourcesCompleted: ALL_SOURCE_IDS.length,
+      sourcesCompleted: sourcesRan.length,
       totalItemsFound: 0,
       newItemsFound: 0,
     });
@@ -105,6 +117,7 @@ export async function POST(request: Request) {
     type: t.type,
     indication: t.indication,
     company: t.company,
+    notes: t.notes ?? undefined,
     learnedQueryTerms: t.learnedQueryTerms ?? [],
     excludeQueryTerms: t.excludeQueryTerms ?? [],
   }));
@@ -123,12 +136,23 @@ export async function POST(request: Request) {
     startedAt: Date.now(),
   });
 
-  const sourceResults = await runAllSources(scanTargets, env, scanOptions);
+  const existingExternalIdsBySource = await client.query(api.rawItems.getExistingExternalIdsFromServer, {
+    secret: effectiveSecret,
+    sources: sourcesRan,
+  });
+
+  const sourceResults = await runAllSources(scanTargets, env, {
+    ...scanOptions,
+    period,
+    sources: sourceIdsToRun,
+    existingExternalIdsBySource: existingExternalIdsBySource as Record<string, string[]>,
+  });
 
   let totalFound = 0;
   let newFound = 0;
+  const failedSources: Record<string, string> = {};
 
-  for (const source of ALL_SOURCE_IDS) {
+  for (const source of sourcesRan) {
     const result = sourceResults[source];
     await client.mutation(api.scans.updateSourceStatusFromServer, {
       secret: effectiveSecret,
@@ -138,6 +162,7 @@ export async function POST(request: Request) {
       startedAt: Date.now(),
     });
     if (result.error) {
+      failedSources[source] = result.error;
       await client.mutation(api.scans.updateSourceStatusFromServer, {
         secret: effectiveSecret,
         scanRunId,
@@ -149,11 +174,21 @@ export async function POST(request: Request) {
       });
       continue;
     }
+    const relevantItems = await filterRelevantItems(
+      result.items,
+      scanTargets,
+      env.OPENAI_API_KEY
+    );
+    const itemsToUpsert = await enrichMissingSummaries(
+      relevantItems,
+      source,
+      env.OPENAI_API_KEY
+    );
     const { totalFound: t, newFound: n } = await client.mutation(api.rawItems.upsertRawItemsFromServer, {
       secret: effectiveSecret,
       scanRunId,
       source,
-      items: result.items.map((i) => ({ ...i, metadata: i.metadata ?? {} })),
+      items: itemsToUpsert.map((i) => ({ ...i, metadata: i.metadata ?? {} })),
     });
     totalFound += t;
     newFound += n;
@@ -172,7 +207,7 @@ export async function POST(request: Request) {
     scanRunId,
     status: "completed",
     completedAt: Date.now(),
-    sourcesCompleted: ALL_SOURCE_IDS.length,
+    sourcesCompleted: sourcesRan.length,
     totalItemsFound: totalFound,
     newItemsFound: newFound,
   });
@@ -202,7 +237,7 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true, scanRunId, totalFound, newFound });
+  return NextResponse.json({ ok: true, scanRunId, totalFound, newFound, failedSources: Object.keys(failedSources).length ? failedSources : undefined });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });

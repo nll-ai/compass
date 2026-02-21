@@ -7,7 +7,9 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { DigestSummaryCard } from "@/components/compass/DigestSummaryCard";
 import { DataSourcesSection } from "@/components/compass/DataSourcesSection";
+import { SourceSelector } from "@/components/compass/SourceSelector";
 import { formatDate } from "@/lib/formatters";
+import { ALL_SOURCE_IDS, type SourceId } from "@/lib/sources/registry";
 
 function DashboardTargetRow({
   target,
@@ -164,6 +166,7 @@ export default function DashboardPage() {
   const [scanningIds, setScanningIds] = useState<Set<Id<"watchTargets">>>(new Set());
   const [scanningComprehensiveIds, setScanningComprehensiveIds] = useState<Set<Id<"watchTargets">>>(new Set());
   const [scanError, setScanError] = useState<string | null>(null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<SourceId[]>(() => [...ALL_SOURCE_IDS]);
   const scanning = scanningIds.size > 0 || scanningComprehensiveIds.size > 0;
 
   const isLoading = targets === undefined;
@@ -253,6 +256,18 @@ export default function DashboardPage() {
 
       <DataSourcesSection />
 
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Scan options</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Choose which sources to run. Run scan or comprehensive search below will use only the selected sources (useful to test a single source).
+        </p>
+        <SourceSelector
+          selected={selectedSourceIds}
+          onChange={setSelectedSourceIds}
+          disabled={scanning}
+        />
+      </section>
+
       <section className="stack">
         <h2 style={{ margin: 0 }}>Watch targets we&apos;re monitoring</h2>
         <p className="muted" style={{ margin: 0 }}>
@@ -272,7 +287,11 @@ export default function DashboardPage() {
                   const res = await fetch("/api/scan", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ period: "daily", targetIds: [target._id] }),
+                    body: JSON.stringify({
+                      period: "daily",
+                      targetIds: [target._id],
+                      sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+                    }),
                   });
                   const text = await res.text();
                   let errBody: { error?: string };
@@ -316,6 +335,7 @@ export default function DashboardPage() {
                       period: "daily",
                       targetIds: [target._id],
                       mode: "comprehensive",
+                      sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
                     }),
                   });
                   const text = await res.text();

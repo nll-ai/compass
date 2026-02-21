@@ -22,6 +22,45 @@ function checkDigestSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
 }
 
+function normalizeForCompare(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function synthesisEquivalentToHeadline(headline: string, synthesis: string): boolean {
+  const h = normalizeForCompare(headline);
+  const t = normalizeForCompare(synthesis);
+  if (h === t) return true;
+  if (h.length < 10 || t.length < 10) return false;
+  const hWords = new Set(h.split(/\s+/).filter(Boolean));
+  const tWords = new Set(t.split(/\s+/).filter(Boolean));
+  const overlap = [...hWords].filter((w) => tWords.has(w)).length;
+  const unionSize = new Set([...hWords, ...tWords]).size;
+  if (unionSize === 0) return false;
+  const jaccard = overlap / unionSize;
+  if (jaccard >= 0.85) return true;
+  const shorter = h.length <= t.length ? h : t;
+  const longer = h.length <= t.length ? t : h;
+  if (longer.includes(shorter) && longer.length - shorter.length < 50) return true;
+  return false;
+}
+
+/** Infer category from raw item source. One summary per source. */
+function categoryForSource(source: string): "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference" {
+  const m: Record<string, "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference"> = {
+    edgar: "filing",
+    pubmed: "publication",
+    clinicaltrials: "trial_update",
+    exa: "news",
+    openfda: "regulatory",
+    rss: "news",
+    patents: "publication",
+  };
+  return m[source] ?? "news";
+}
+
 export const createDigestRunWithItemsFromServer = mutation({
   args: {
     secret: v.string(),
@@ -142,178 +181,44 @@ export const generate = internalAction({
     if (newItems.length === 0 && scan?.period !== "weekly") return;
     const period = scan?.period ?? "daily";
 
-    const targetMap = new Map(targets.map((t) => [t.name, t._id]));
-    const targetNames = new Map(targets.map((t) => [t._id, t.displayName]));
-
-    const sourcesContext = newItems.map((item, i) => {
-      const targetName = targetNames.get(item.watchTargetId) ?? "Unknown";
+    // One signal per source: one digest item per raw item, using each item's title and abstract (main point).
+    const limit = 50;
+    const items = newItems.slice(0, limit).map((item) => {
+      const headline = item.title;
+      const rawSynthesis = ((item.abstract ?? item.fullText ?? item.title ?? "") as string).trim() || item.title;
+      const synthesis = synthesisEquivalentToHeadline(headline, rawSynthesis) ? "No additional summary available." : rawSynthesis;
       return {
-        index: i,
-        source: item.source,
-        targetName,
-        title: item.title,
-        url: item.url,
-        content: (item.abstract ?? item.fullText ?? item.title).slice(0, 800),
+        watchTargetId: item.watchTargetId,
+        rawItemIds: [item._id],
+        category: categoryForSource(item.source),
+        significance: "medium" as const,
+        headline,
+        synthesis,
+        strategicImplication: undefined as string | undefined,
+        sources: [
+          {
+            title: item.title,
+            url: item.url,
+            source: item.source,
+            date: formatSourceDate(item.source, item.publishedAt, item.metadata),
+          },
+        ],
       };
     });
 
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey) {
-      await ctx.runMutation(internal.digests.createDigestRunWithItems, {
-        scanRunId,
-        period,
-        executiveSummary: "Digest generated without LLM (no OPENAI_API_KEY).",
-        criticalCount: 0,
-        highCount: 0,
-        mediumCount: 0,
-        lowCount: newItems.length,
-        items: newItems.slice(0, 20).map((item) => ({
-          watchTargetId: item.watchTargetId,
-          rawItemIds: [item._id],
-          category: "news" as const,
-          significance: "low" as const,
-          headline: item.title,
-          synthesis: item.abstract ?? item.title,
-          strategicImplication: undefined,
-          sources: [
-            {
-              title: item.title,
-              url: item.url,
-              source: item.source,
-              date: formatSourceDate(item.source, item.publishedAt, item.metadata),
-            },
-          ],
-        })),
-      });
-      return;
-    }
-
-    const prompt = `You are a competitive intelligence analyst for biopharma. Given the following new items from a scan, produce a structured digest.
-
-Today's date: ${new Date().toISOString().split("T")[0]}
-Period: ${period}
-
-New items (index, source, target, title, content):
-${JSON.stringify(sourcesContext, null, 2)}
-
-Respond with a JSON object only, no markdown:
-{
-  "executiveSummary": "2-3 sentences. Total signals and the 1-2 most important developments.",
-  "items": [
-    {
-      "targetName": "exact target display name from the items above",
-      "category": "trial_update|publication|regulatory|filing|news|conference",
-      "significance": "critical|high|medium|low",
-      "headline": "One crisp line, lead with the event",
-      "synthesis": "2-4 sentences.",
-      "strategicImplication": "1-2 sentences for Ormoni, or null",
-      "sourceIndices": [0, 1]
-    }
-  ]
-}
-
-Limit to 20 items. Use sourceIndices to reference which of the new items (by index) this digest item is based on.`;
-
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI: ${res.status} ${err}`);
-    }
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = data.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(content) as {
-      executiveSummary?: string;
-      items?: Array<{
-        targetName?: string;
-        category?: string;
-        significance?: string;
-        headline?: string;
-        synthesis?: string;
-        strategicImplication?: string | null;
-        sourceIndices?: number[];
-      }>;
-    };
-
-    const executiveSummary = parsed.executiveSummary ?? "No summary generated.";
-    const rawItems = parsed.items ?? [];
-    let criticalCount = 0;
-    let highCount = 0;
-    let mediumCount = 0;
-    let lowCount = 0;
-
-    const items: Array<{
-      watchTargetId: typeof newItems[0]["watchTargetId"];
-      rawItemIds: typeof newItems[0]["_id"][];
-      category: "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference";
-      significance: "critical" | "high" | "medium" | "low";
-      headline: string;
-      synthesis: string;
-      strategicImplication?: string;
-      sources: Array<{ title: string; url: string; source: string }>;
-    }> = [];
-
-    const categoryOk = (c: string): c is "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference" =>
-      ["trial_update", "publication", "regulatory", "filing", "news", "conference"].includes(c);
-    const significanceOk = (s: string): s is "critical" | "high" | "medium" | "low" =>
-      ["critical", "high", "medium", "low"].includes(s);
-
-    for (const it of rawItems.slice(0, 20)) {
-      const targetName = it.targetName ?? "";
-      const watchTargetId = targetMap.get(targetName) ?? newItems[0]?.watchTargetId;
-      if (!watchTargetId) continue;
-      const indices = it.sourceIndices ?? [];
-      const rawItemIds = indices.map((i) => newItems[i]?._id).filter(Boolean) as typeof newItems[0]["_id"][];
-      if (rawItemIds.length === 0) continue;
-      const sources = indices
-        .map((i) => {
-          const r = newItems[i];
-          if (!r) return { title: "", url: "", source: "" as const, date: undefined as string | undefined };
-          return {
-            title: r.title,
-            url: r.url,
-            source: r.source,
-            date: formatSourceDate(r.source, r.publishedAt, r.metadata),
-          };
-        })
-        .filter((s) => s.title);
-
-      const category: "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference" = categoryOk(it.category ?? "news") ? (it.category as "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference") : "news";
-      const sig: "critical" | "high" | "medium" | "low" = significanceOk(it.significance ?? "low") ? (it.significance as "critical" | "high" | "medium" | "low") : "low";
-      if (sig === "critical") criticalCount++;
-      else if (sig === "high") highCount++;
-      else if (sig === "medium") mediumCount++;
-      else lowCount++;
-
-      items.push({
-        watchTargetId,
-        rawItemIds,
-        category,
-        significance: sig,
-        headline: it.headline ?? "Update",
-        synthesis: it.synthesis ?? "",
-        strategicImplication: it.strategicImplication ?? undefined,
-        sources,
-      });
-    }
+    const lowCount = items.length;
+    const executiveSummary =
+      items.length === 0
+        ? "No new sources this period."
+        : `${items.length} new source${items.length === 1 ? "" : "s"} this period.`;
 
     await ctx.runMutation(internal.digests.createDigestRunWithItems, {
       scanRunId,
       period,
       executiveSummary,
-      criticalCount,
-      highCount,
-      mediumCount,
+      criticalCount: 0,
+      highCount: 0,
+      mediumCount: 0,
       lowCount,
       items,
     });

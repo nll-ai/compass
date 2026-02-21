@@ -39,19 +39,26 @@ export const createRunForServer = mutation({
     secret: v.string(),
     period: v.union(v.literal("daily"), v.literal("weekly")),
     targetIds: v.optional(v.array(v.id("watchTargets"))),
+    sourceIds: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { secret, period, targetIds }) => {
+  handler: async (ctx, { secret, period, targetIds, sourceIds }) => {
     if (!checkScanSecret(secret)) throw new Error("Unauthorized");
+    const sourcesToRun =
+      sourceIds?.length &&
+      sourceIds.every((s) => (ALL_SOURCE_IDS as readonly string[]).includes(s))
+        ? sourceIds
+        : [...ALL_SOURCE_IDS];
+    const sourcesTotal = sourcesToRun.length;
     const scanRunId = await ctx.db.insert("scanRuns", {
       scheduledFor: Date.now(),
       status: "pending",
       period,
-      sourcesTotal: SOURCES_TOTAL,
+      sourcesTotal,
       sourcesCompleted: 0,
       totalItemsFound: 0,
       newItemsFound: 0,
     });
-    for (const source of ALL_SOURCE_IDS) {
+    for (const source of sourcesToRun) {
       await ctx.db.insert("scanSourceStatus", {
         scanRunId,
         source,
