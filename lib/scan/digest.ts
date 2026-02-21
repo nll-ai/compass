@@ -1,4 +1,7 @@
 import type { Id } from "../../convex/_generated/dataModel";
+import { generateObject } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
 import { formatSourceDate } from "../source-utils";
 
 export interface NewRawItem {
@@ -94,6 +97,145 @@ export interface FeedbackContext {
     synthesis: string;
     rawSnippets?: Array<{ title: string; abstractSnippet: string }>;
   }>;
+}
+
+/** Target info for the digest prompt (id, displayName, type, therapeuticArea, indication, notes). */
+export interface DigestTargetInfo {
+  _id: Id<"watchTargets">;
+  displayName: string;
+  type?: string;
+  therapeuticArea?: string;
+  indication?: string;
+  notes?: string;
+}
+
+const CONTENT_MAX_CHARS = 1800;
+const SOURCES_CONTEXT_LIMIT = 50;
+
+const DIGEST_SYSTEM_PROMPT = `You are a competitive intelligence analyst specializing in biopharmaceuticals.
+
+Your role is to synthesize raw intelligence data into actionable digests for a small biotech leadership team. Output will be read by time-constrained executives who need signal, not noise.
+
+Formatting rules:
+- Headlines: Lead with the event, not the company. "Phase 2 trial of X enrolls first patient" not "Company announces milestone for X".
+- Synthesis: Stick to facts. Use numbers when available. Don't hedge or editorialize.
+- Strategic implications: Only write when you can say something genuinely specific; otherwise omit or null. Generic statements like "this may affect strategy" are not acceptable.
+- Significance: critical = program termination, major regulatory decision, Phase 3 failure, class-defining result; high = new trial, Phase 2/3 initiation, key publication, FDA designation; medium = interim data, protocol amendment, analyst report; low = routine update, review article, minor mention.`;
+
+const digestItemAISchema = z.object({
+  headline: z.string().max(200).describe("One crisp line. Lead with the change, not the company."),
+  synthesis: z.string().describe("2–4 sentences. What happened, what the data shows, what's notable."),
+  significance: z.enum(["critical", "high", "medium", "low"]),
+  category: z.enum(["trial_update", "publication", "regulatory", "filing", "news", "conference"]),
+  strategicImplication: z.string().nullable().describe("1–2 sentences only if genuinely specific; null otherwise."),
+  sourceIndices: z.array(z.number()).describe("Indices into the sources array that this digest item summarizes."),
+});
+
+const digestAISchema = z.object({
+  executiveSummary: z.string().describe("2–3 sentences. Total signals found, most important 1–2 developments, overall pulse."),
+  items: z.array(digestItemAISchema),
+});
+
+/**
+ * Generate digest using an LLM: executive summary + per-signal items from sourcesContext.
+ * Uses watch target notes ("What are you looking to monitor?") in the user prompt.
+ * Falls back to rule-based generateDigest when openaiKey is missing or LLM fails.
+ */
+export async function generateDigestWithAI(
+  newItems: NewRawItem[],
+  period: "daily" | "weekly",
+  targets: DigestTargetInfo[],
+  openaiKey: string | undefined,
+  _feedbackContext?: FeedbackContext
+): Promise<DigestPayload> {
+  const targetIdToIndex = new Map<Id<"watchTargets">, number>(targets.map((t, i) => [t._id, i]));
+  const targetNames = new Map<Id<"watchTargets">, string>(targets.map((t) => [t._id, t.displayName]));
+
+  if (!openaiKey || newItems.length === 0) {
+    return generateDigest(newItems, period, targetNames, openaiKey, _feedbackContext);
+  }
+
+  const limited = newItems.slice(0, SOURCES_CONTEXT_LIMIT);
+  const sourcesContext = limited.map((item, i) => {
+    const content = (item.abstract ?? item.fullText ?? item.title ?? "").trim() || item.title;
+    const truncated = content.length > CONTENT_MAX_CHARS ? content.slice(0, CONTENT_MAX_CHARS) + "…" : content;
+    const targetDisplay = targets[targetIdToIndex.get(item.watchTargetId) ?? 0]?.displayName ?? "Unknown";
+    return {
+      index: i,
+      source: item.source,
+      target: targetDisplay,
+      title: item.title,
+      url: item.url,
+      content: truncated,
+      publishedAt: item.publishedAt ? new Date(item.publishedAt).toISOString() : null,
+      metadata: item.metadata,
+    };
+  });
+
+  const targetsBlock = targets
+    .map(
+      (t) =>
+        `- ${t.displayName} (${t.type ?? "—"}, ${t.therapeuticArea ?? "—"}${t.indication ? `, ${t.indication}` : ""})${t.notes?.trim() ? `\n    What to monitor: ${t.notes.trim()}` : ""}`
+    )
+    .join("\n");
+
+  try {
+    const { object } = await generateObject({
+      model: openai("gpt-4o"),
+      schema: digestAISchema,
+      system: DIGEST_SYSTEM_PROMPT,
+      prompt: `Today's date: ${new Date().toISOString().split("T")[0]}
+
+Active watch targets (with optional "What to monitor" when set):
+${targetsBlock}
+
+New items to synthesize (${limited.length} total). Each has index, source, target, title, url, content, publishedAt. Group related items into single digest entries when they cover the same event. Rank by significance. Be concise — no filler.
+
+${JSON.stringify(sourcesContext, null, 2)}`,
+    });
+
+    const items: DigestItemPayload[] = [];
+    for (const aiItem of object.items) {
+      const indices = aiItem.sourceIndices.filter((i) => i >= 0 && i < limited.length);
+      if (indices.length === 0) continue;
+      const firstItem = limited[indices[0]!];
+      const rawItemIds = indices.map((i) => limited[i]!._id);
+      items.push({
+        watchTargetId: firstItem.watchTargetId,
+        rawItemIds,
+        category: aiItem.category as Category,
+        significance: aiItem.significance as Significance,
+        headline: aiItem.headline,
+        synthesis: aiItem.synthesis,
+        strategicImplication: aiItem.strategicImplication ?? undefined,
+        sources: indices.map((i) => {
+          const it = limited[i]!;
+          return {
+            title: it.title,
+            url: it.url,
+            source: it.source,
+            date: formatSourceDate(it.source, it.publishedAt, it.metadata),
+          };
+        }),
+      });
+    }
+
+    const criticalCount = items.filter((i) => i.significance === "critical").length;
+    const highCount = items.filter((i) => i.significance === "high").length;
+    const mediumCount = items.filter((i) => i.significance === "medium").length;
+    const lowCount = items.filter((i) => i.significance === "low").length;
+
+    return {
+      executiveSummary: object.executiveSummary,
+      criticalCount,
+      highCount,
+      mediumCount,
+      lowCount,
+      items,
+    };
+  } catch {
+    return generateDigest(newItems, period, targetNames, openaiKey, _feedbackContext);
+  }
 }
 
 export async function generateDigest(

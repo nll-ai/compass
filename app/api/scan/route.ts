@@ -7,7 +7,7 @@ import { runAllSources } from "../../../lib/scan/sources";
 import { filterRelevantItems } from "../../../lib/scan/relevance-filter";
 import { enrichMissingSummaries } from "../../../lib/scan/summary-enrichment";
 import { ALL_SOURCE_IDS } from "../../../lib/sources/registry";
-import { generateDigest } from "../../../lib/scan/digest";
+import { generateDigest, generateDigestWithAI, type DigestTargetInfo } from "../../../lib/scan/digest";
 import type { ScanOptions, ScanTarget } from "../../../lib/scan/types";
 
 /** Allow long comprehensive runs (Vercel Pro supports up to 300s per route). */
@@ -216,15 +216,30 @@ export async function POST(request: Request) {
   const scan = await client.query(api.scans.get, { id: scanRunId });
   if (newFound > 0 || scan?.period === "weekly") {
     const newItems = await client.query(api.rawItems.getNewByScanRunFromServer, { secret: effectiveSecret, scanRunId });
-    const targetNames = new Map(scanTargets.map((t) => [t._id, t.displayName]));
     const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
-    const payload = await generateDigest(
-      newItems,
-      (scan?.period as "daily" | "weekly") ?? "daily",
-      targetNames,
-      env.OPENAI_API_KEY,
-      feedbackContext
-    );
+    const digestTargets: DigestTargetInfo[] = scanTargets.map((t) => ({
+      _id: t._id,
+      displayName: t.displayName,
+      type: t.type,
+      therapeuticArea: t.therapeuticArea,
+      indication: t.indication,
+      notes: t.notes,
+    }));
+    const payload = env.OPENAI_API_KEY
+      ? await generateDigestWithAI(
+          newItems,
+          (scan?.period as "daily" | "weekly") ?? "daily",
+          digestTargets,
+          env.OPENAI_API_KEY,
+          feedbackContext
+        )
+      : await generateDigest(
+          newItems,
+          (scan?.period as "daily" | "weekly") ?? "daily",
+          new Map(scanTargets.map((t) => [t._id, t.displayName])),
+          env.OPENAI_API_KEY,
+          feedbackContext
+        );
     const rawItemIds = payload.items.flatMap((i) => i.rawItemIds);
     const sourceLinksHash =
       rawItemIds.length > 0

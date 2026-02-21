@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
 export const listRecent = query({
@@ -68,5 +68,21 @@ export const getLatestForTarget = query({
       }
     }
     return latest;
+  },
+});
+
+/** Delete a digest run and all its digest items. */
+export const remove = mutation({
+  args: { id: v.id("digestRuns") },
+  handler: async (ctx, { id }) => {
+    const items = await ctx.db
+      .query("digestItems")
+      .withIndex("by_digestRun", (q) => q.eq("digestRunId", id))
+      .collect();
+    for (const item of items) {
+      await ctx.db.delete(item._id);
+    }
+    await ctx.db.delete(id);
+    return { deleted: true };
   },
 });

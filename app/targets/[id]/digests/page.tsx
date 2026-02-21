@@ -1,18 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { formatDate, executiveSummarySnippet } from "@/lib/formatters";
+import { useState } from "react";
 
-export default function HistoryPage() {
-  const digestRuns = useQuery(api.digestRuns.listRecent, { limit: 30 });
+export default function TargetDigestsPage() {
+  const params = useParams();
+  const id = params.id as Id<"watchTargets">;
+  const target = useQuery(api.watchTargets.get, { id });
+  const runs = useQuery(api.digestRuns.listSignalReportsForTarget, { watchTargetId: id, limit: 50 });
   const removeRun = useMutation(api.digestRuns.remove);
   const [deletingId, setDeletingId] = useState<Id<"digestRuns"> | null>(null);
 
-  if (digestRuns === undefined) {
+  if (target === undefined || runs === undefined) {
     return (
       <div className="stack">
         <h1>Digest log</h1>
@@ -21,21 +25,43 @@ export default function HistoryPage() {
     );
   }
 
+  if (target === null) {
+    return (
+      <div className="stack">
+        <h1>Watch target not found</h1>
+        <p className="muted">This watch target may have been removed.</p>
+        <Link href="/targets">← Back to Watch Targets</Link>
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
+      <nav className="muted" style={{ fontSize: "0.9rem" }}>
+        <Link href="/targets">Watch Targets</Link>
+        <span style={{ margin: "0 0.5rem" }}>/</span>
+        <Link href={`/targets/${id}`}>{target.displayName}</Link>
+        <span style={{ margin: "0 0.5rem" }}>/</span>
+        Digest log
+      </nav>
       <h1 style={{ margin: 0 }}>Digest log</h1>
       <p className="muted" style={{ margin: 0 }}>
-        Running log of AI-generated digests. A new digest is created only when source links change.
+        AI-generated digests that include {target.displayName}. A new digest is created only when source links change.
       </p>
-      {digestRuns.length === 0 ? (
+      {target.notes?.trim() ? (
+        <p className="muted" style={{ margin: "0.25rem 0 0", fontSize: "0.9rem" }}>
+          Your goal: {target.notes.trim()}
+        </p>
+      ) : null}
+      {runs.length === 0 ? (
         <div className="card">
           <p className="muted" style={{ margin: 0 }}>
-            No digest runs yet. Run a scan from the <Link href="/">dashboard</Link> or <Link href="/targets">Watch Targets</Link>.
+            No digests yet for this target. Run a scan to generate one.
           </p>
         </div>
       ) : (
         <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {digestRuns.map((run) => (
+          {runs.map((run) => (
             <li key={run._id}>
               <div
                 className="card"
@@ -57,15 +83,11 @@ export default function HistoryPage() {
                   }}
                 >
                   <span style={{ fontWeight: 600 }}>{formatDate(run.generatedAt)}</span>
-                  <span className="muted" style={{ marginLeft: "0.5rem", fontSize: "0.9rem" }}>
-                    {run.period} · {run.totalSignals} signals
-                    {run.criticalCount > 0 && ` · ${run.criticalCount} critical`}
-                  </span>
                   <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.9rem", lineHeight: 1.4 }}>
                     {executiveSummarySnippet(run.executiveSummary)}
                   </p>
                   <span className="muted" style={{ marginTop: "0.5rem", display: "inline-block", fontSize: "0.85rem" }}>
-                    View full digest →
+                    {run.totalSignals} signal{run.totalSignals !== 1 ? "s" : ""} · View full digest →
                   </span>
                 </Link>
                 <button

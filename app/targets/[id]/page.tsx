@@ -437,6 +437,26 @@ export default function TargetDetailPage() {
               Timeline →
             </Link>
           </li>
+          <li>
+            <Link
+              href={`/targets/${id}/digests`}
+              className="card"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.5rem 0.75rem",
+                border: "1px solid #e5e7eb",
+                borderRadius: 8,
+                color: "inherit",
+                textDecoration: "none",
+                fontWeight: 500,
+                fontSize: "0.9rem",
+              }}
+            >
+              Digest log →
+            </Link>
+          </li>
         </ul>
       </section>
 
