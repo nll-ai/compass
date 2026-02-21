@@ -304,21 +304,12 @@ Use for tab-like filters (e.g. timeline focus). Implement with `<Link>` elements
 
 ### 5.8 Feedback Controls (Thumbs up / down)
 
-```css
-.timeline-feedback {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  margin-left: 0.5rem;
-  padding-left: 0.5rem;
-  border-left: 1px solid #e5e7eb;
-}
-```
+Use the **same** control everywhere for consistency: `.source-link-feedback`. It is a pill group (gray background `#f3f4f6`, border `#e5e7eb`, border-radius 8px) containing two emoji buttons (👍 👎). Buttons: transparent by default, hover `#e5e7eb`, selected state `aria-pressed="true"` → white background, bold text, subtle box-shadow. No left border or timeline-specific styling.
 
-Buttons inside use emoji (👍 👎) at `font-size: 1rem; opacity: 0.6` (0.5 resting, 1.0 on hover/active).
+**Where it appears:** Source Links view (target detail page) and Timeline view. Same class, same look.
 
 **Behavior variants:**
-- **Record-only** (Source Links view): Clicking records feedback, item stays visible. Both thumbs show current state via opacity.
+- **Record-only** (Source Links view): Clicking records feedback, item stays visible. Both thumbs show current state via `aria-pressed` and the pill selected style.
 - **Record-and-hide** (Timeline view): Thumbs down triggers a fade-out animation (`opacity: 0; max-height: 0; margin-bottom: 0` over `0.35s ease`), then persists feedback and removes the item.
 
 ---
@@ -429,7 +420,7 @@ align-items: center
 | `.source-badge` | Source-type pill (colored via `data-source`) |
 | `.timeline-*` | Timeline-specific components |
 | `.focus-bar`, `.focus-pill` | Segmented control |
-| `.timeline-feedback` | Thumbs up/down control group |
+| `.source-link-feedback` | Thumbs up/down pill group (Source Links + Timeline) |
 | `.timeline-empty` | Empty state for timeline |
 
 ### Inline styles

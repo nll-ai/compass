@@ -22,7 +22,7 @@ Every UI element must conform to the style guide. When the guide doesn't cover a
 
 ### Continuous UI improvement
 
-After completing any change (feature, bugfix, refactor), re-read `docs/styleguide.md` and identify **exactly one** non-breaking UI improvement in the files you touched or nearby. Apply it in the same changeset. Examples: replacing a hardcoded color with the correct palette value, switching a `.slice()` truncation to CSS `-webkit-line-clamp`, adding a missing `aria-label`, extracting a repeated inline style into a CSS class, fixing a spacing token that doesn't match the scale. Keep each improvement small and safe — it must not alter layout or behavior in a way that could surprise the user.
+After completing any change (feature, bugfix, refactor), re-read `docs/styleguide.md` and identify **exactly one** non-breaking UI improvement in the files you touched or nearby. Apply it in the same changeset. Examples: replacing a hardcoded color with the correct palette value, switching a `.slice()` truncation to CSS `-webkit-line-clamp`, adding a missing `aria-label`, extracting a repeated inline style into a CSS class, fixing a spacing token that doesn't match the scale, **or ensuring style consistency across views/pages** (e.g. reusing the same component or CSS class for the same kind of control so the timeline and source links view don't diverge). Keep each improvement small and safe — it must not alter layout or behavior in a way that could surprise the user.
 
 ## Key directories
 

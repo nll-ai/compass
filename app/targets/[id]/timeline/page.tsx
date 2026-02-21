@@ -250,14 +250,13 @@ export default function TargetTimelinePage() {
                             >
                               View details
                             </button>
-                            <span className="timeline-feedback" aria-label="Feedback">
+                            <span className="source-link-feedback" role="group" aria-label="Was this relevant?">
                               <button
                                 type="button"
                                 onClick={() => setFeedback({ rawItemId: raw._id, feedback: "good" })}
                                 aria-pressed={feedbackMap?.[raw._id] === "good"}
-                                aria-label="Thumbs up"
+                                aria-label="Relevant"
                                 title="Relevant"
-                                className={feedbackMap?.[raw._id] === "good" ? "active" : undefined}
                               >
                                 👍
                               </button>
@@ -265,9 +264,8 @@ export default function TargetTimelinePage() {
                                 type="button"
                                 onClick={() => setExitingIds((prev) => new Set(prev).add(raw._id))}
                                 aria-pressed={feedbackMap?.[raw._id] === "bad"}
-                                aria-label="Thumbs down (hide from timeline)"
+                                aria-label="Not relevant (hide from timeline)"
                                 title="Not relevant (hide from timeline)"
-                                className={feedbackMap?.[raw._id] === "bad" ? "active" : undefined}
                               >
                                 👎
                               </button>

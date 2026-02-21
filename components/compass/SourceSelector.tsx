@@ -12,7 +12,6 @@ export function SourceSelector({
   disabled?: boolean;
 }) {
   const selectedSet = new Set(selected);
-  const allSelected = ALL_SOURCE_IDS.every((id) => selectedSet.has(id));
 
   const toggle = (id: SourceId) => {
     if (selectedSet.has(id)) {
@@ -31,15 +30,6 @@ export function SourceSelector({
         <span className="muted" style={{ fontSize: "0.875rem" }}>
           Sources to run:
         </span>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={() => (allSelected ? selectNone() : selectAll())}
-            disabled={disabled}
-          />
-          <span style={{ fontSize: "0.875rem" }}>All</span>
-        </label>
         <button
           type="button"
           onClick={selectAll}
@@ -48,7 +38,7 @@ export function SourceSelector({
             padding: "0.2rem 0.5rem",
             fontSize: "0.8rem",
             border: "1px solid #d1d5db",
-            borderRadius: 6,
+            borderRadius: 8,
             background: "transparent",
             cursor: disabled ? "not-allowed" : "pointer",
           }}
@@ -63,7 +53,7 @@ export function SourceSelector({
             padding: "0.2rem 0.5rem",
             fontSize: "0.8rem",
             border: "1px solid #d1d5db",
-            borderRadius: 6,
+            borderRadius: 8,
             background: "transparent",
             cursor: disabled ? "not-allowed" : "pointer",
           }}
