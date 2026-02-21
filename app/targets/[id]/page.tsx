@@ -113,23 +113,7 @@ export default function TargetDetailPage() {
         <span style={{ margin: "0 0.5rem" }}>/</span>
         {target.displayName}
       </nav>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem" }}>
-        <h1 style={{ margin: 0 }}>{target.displayName}</h1>
-        <Link
-          href={`/targets/${id}/timeline`}
-          style={{
-            fontSize: "0.9rem",
-            padding: "0.35rem 0.75rem",
-            border: "1px solid #d1d5db",
-            borderRadius: 6,
-            color: "#374151",
-            textDecoration: "none",
-            fontWeight: 500,
-          }}
-        >
-          Timeline view
-        </Link>
-      </div>
+      <h1 style={{ margin: 0 }}>{target.displayName}</h1>
 
       <div className="stack" style={{ gap: "0.75rem" }}>
         <div className="card stack" style={{ padding: "0.75rem 1rem" }}>
@@ -420,6 +404,35 @@ export default function TargetDetailPage() {
         </button>
       </form>
         )}
+      </section>
+
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Insights View</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Pre-baked views to explore this target’s source links by focus (e.g. timeline by clinical trials, SEC filings, or news).
+        </p>
+        <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "0.75rem 0 0", gap: "0.5rem" }}>
+          <li>
+            <Link
+              href={`/targets/${id}/timeline`}
+              className="card"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.5rem 0.75rem",
+                border: "1px solid #e5e7eb",
+                borderRadius: 8,
+                color: "inherit",
+                textDecoration: "none",
+                fontWeight: 500,
+                fontSize: "0.9rem",
+              }}
+            >
+              Timeline →
+            </Link>
+          </li>
+        </ul>
       </section>
 
       <section className="card stack">
