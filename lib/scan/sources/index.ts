@@ -1,6 +1,6 @@
 import type { ScanTarget, SourceResult, ScanOptions } from "../types";
 import { ALL_SOURCE_IDS, type SourceId } from "../../sources/registry";
-import { buildMission, type SourceAgentContext } from "../agent-context";
+import { buildMission, type SourceAgentContext, type FeedbackForMission } from "../agent-context";
 import { runPubmed } from "./pubmed";
 import { runClinicalTrials } from "./clinicaltrials";
 import { runExa } from "./exa";
@@ -30,6 +30,8 @@ export async function runAllSources(
     sources?: SourceId[];
     /** Existing external IDs per source (from DB) so agents prioritize new items. */
     existingExternalIdsBySource?: Record<string, string[]>;
+    /** Recent thumbs up/down feedback to inject into mission so agents tune retrieval. */
+    feedbackForMission?: FeedbackForMission;
   }
 ): Promise<Record<SourceId, SourceResult>> {
   const period = options?.period ?? "daily";
@@ -38,7 +40,7 @@ export async function runAllSources(
     options.sources.every((s) => (ALL_SOURCE_IDS as readonly string[]).includes(s))
       ? (options.sources as SourceId[])
       : [...ALL_SOURCE_IDS];
-  const mission = buildMission(period, { mode: options?.mode }, targets);
+  const mission = buildMission(period, { mode: options?.mode }, targets, options?.feedbackForMission);
   const existingBySource = options?.existingExternalIdsBySource;
   const existingExternalIdsBySource: Record<SourceId, Set<string>> | undefined = existingBySource
     ? (Object.fromEntries(

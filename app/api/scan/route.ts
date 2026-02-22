@@ -142,11 +142,17 @@ export async function POST(request: Request) {
     sources: sourcesRan,
   });
 
+  const feedbackForMission = await client.query(api.feedbackForScan.getFeedbackForMission, {
+    watchTargetIds: scanTargets.map((t) => t._id),
+    limit: 25,
+  });
+
   const sourceResults = await runAllSources(scanTargets, env, {
     ...scanOptions,
     period,
     sources: sourceIdsToRun,
     existingExternalIdsBySource: existingExternalIdsBySource as Record<string, string[]>,
+    feedbackForMission: feedbackForMission as import("../../../lib/scan/agent-context").FeedbackForMission,
   });
 
   let totalFound = 0;
