@@ -13,14 +13,7 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
 
 export async function GET(request: NextRequest) {
   try {
-    const req =
-      request instanceof NextRequest
-        ? request
-        : new NextRequest(request.url, {
-            headers: request.headers,
-            method: request.method,
-          });
-    const { session } = await authkit(req);
+    const { session } = await authkit(request);
     const user = session?.user ?? null;
     if (!user) {
       return NextResponse.json(
