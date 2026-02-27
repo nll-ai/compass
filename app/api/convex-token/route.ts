@@ -1,6 +1,6 @@
 import { SignJWT } from "jose";
-import { NextResponse } from "next/server";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { NextRequest, NextResponse } from "next/server";
+import { authkit } from "@workos-inc/authkit-nextjs";
 import { isEmailAllowed } from "@/lib/auth-allowlist";
 
 // Must match convex/auth.config.ts issuer exactly (Convex rejects otherwise)
@@ -11,9 +11,17 @@ const EXPIRY_SEC = 10 * 60; // 10 minutes
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { user } = await withAuth();
+    const req =
+      request instanceof NextRequest
+        ? request
+        : new NextRequest(request.url, {
+            headers: request.headers,
+            method: request.method,
+          });
+    const { session } = await authkit(req);
+    const user = session?.user ?? null;
     if (!user) {
       return NextResponse.json(
         { token: null, error: "not_signed_in" },
