@@ -5,6 +5,7 @@ import { isEmailAllowed } from "@/lib/auth-allowlist";
 
 function normalizePem(raw: string): string {
   let pem = raw
+    .replace(/^["']|["']$/g, "")
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "")
     .trim();

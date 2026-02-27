@@ -14,6 +14,7 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
 /** Normalize a PEM string that may have literal \n, escaped newlines, or be a single line. */
 function normalizePem(raw: string): string {
   let pem = raw
+    .replace(/^["']|["']$/g, "")
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "")
     .trim();
