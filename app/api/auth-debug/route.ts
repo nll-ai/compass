@@ -1,18 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
+import { SignJWT, importPKCS8 } from "jose";
 import { cookies } from "next/headers";
 import { isEmailAllowed } from "@/lib/auth-allowlist";
+
+function normalizePem(raw: string): string {
+  let pem = raw
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "")
+    .trim();
+  if (!pem.includes("\n")) {
+    pem = pem
+      .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+      .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+      .replace(
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----\n",
+      )
+      .replace(
+        "-----END RSA PRIVATE KEY-----",
+        "\n-----END RSA PRIVATE KEY-----",
+      );
+    const match = pem.match(
+      /(-----BEGIN (?:RSA )?PRIVATE KEY-----)\n(.+)\n(-----END (?:RSA )?PRIVATE KEY-----)/,
+    );
+    if (match) {
+      const body = match[2].replace(/\s+/g, "");
+      const lines = body.match(/.{1,64}/g) ?? [body];
+      pem = `${match[1]}\n${lines.join("\n")}\n${match[3]}`;
+    }
+  }
+  return pem;
+}
 
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const allCookieNames = cookieStore.getAll().map((c) => c.name);
 
-  const hasPrivateKey = Boolean(process.env.CONVEX_JWT_PRIVATE_KEY);
-  const hasWorkosClientId = Boolean(process.env.WORKOS_CLIENT_ID);
-  const hasWorkosCookiePassword = Boolean(process.env.WORKOS_COOKIE_PASSWORD);
-  const hasWorkosApiKey = Boolean(process.env.WORKOS_API_KEY);
-  const redirectUri = process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI ?? "(not set)";
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL ?? "(not set)";
+  const rawKey = process.env.CONVEX_JWT_PRIVATE_KEY ?? "";
+  const keyInfo = {
+    length: rawKey.length,
+    startsWithDash: rawKey.startsWith("-----"),
+    hasLiteralBackslashN: rawKey.includes("\\n"),
+    hasRealNewline: rawKey.includes("\n"),
+    first30: rawKey.slice(0, 30),
+    last20: rawKey.slice(-20),
+  };
 
   let authkitUser: Record<string, unknown> | null = null;
   let authkitError: string | null = null;
@@ -33,14 +65,12 @@ export async function GET(request: NextRequest) {
   let tokenResult: string | null = null;
   let tokenError: string | null = null;
   let tokenPreview: string | null = null;
-  if (authkitUser && emailAllowed && hasPrivateKey) {
+  let normalizedKeyPreview: string | null = null;
+  if (authkitUser && emailAllowed && rawKey) {
     try {
-      const { importPKCS8 } = await import("jose");
-      const pem = process.env.CONVEX_JWT_PRIVATE_KEY!;
-      const privateKey = await importPKCS8(
-        pem.replace(/\\n/g, "\n").trim(),
-        "RS256",
-      );
+      const pem = normalizePem(rawKey);
+      normalizedKeyPreview = pem.slice(0, 40) + "...";
+      const privateKey = await importPKCS8(pem, "RS256");
       const now = Math.floor(Date.now() / 1000);
       const token = await new SignJWT({
         profile: { email: authkitUser.email },
@@ -66,18 +96,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       cookies: allCookieNames,
-      env: {
-        hasPrivateKey,
-        hasWorkosClientId,
-        hasWorkosCookiePassword,
-        hasWorkosApiKey,
-        redirectUri,
-        convexUrl,
-      },
       authkit: authkitUser
         ? { user: authkitUser }
         : { error: authkitError ?? "no_user" },
       emailAllowed,
+      keyInfo,
+      normalizedKeyPreview,
       jwtSign: tokenResult
         ? { result: tokenResult, preview: tokenPreview }
         : { error: tokenError ?? "skipped" },
