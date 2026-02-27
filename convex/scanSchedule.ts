@@ -1,20 +1,29 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
-/** Get the global scan schedule (singleton). */
+/** Get the current user's scan schedule. */
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const doc = await ctx.db.query("scanSchedule").first();
-    return doc;
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
+    return await ctx.db
+      .query("scanSchedule")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
   },
 });
 
-/** Get scan schedule for a single watch target, if any. */
+/** Get scan schedule for a single watch target, if any. Caller must own the target. */
 export const getForTarget = query({
   args: { watchTargetId: v.id("watchTargets") },
   handler: async (ctx, { watchTargetId }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
+    const target = await ctx.db.get(watchTargetId);
+    if (!target || target.userId !== userId) return null;
     return await ctx.db
       .query("watchTargetSchedule")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -22,15 +31,23 @@ export const getForTarget = query({
   },
 });
 
-/** List all per-target schedules (for Settings UI). */
+/** List all per-target schedules for the current user's targets. */
 export const listPerTargetSchedules = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("watchTargetSchedule").order("desc").collect();
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const targets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const targetIds = new Set(targets.map((t) => t._id));
+    const all = await ctx.db.query("watchTargetSchedule").collect();
+    return all.filter((s) => targetIds.has(s.watchTargetId));
   },
 });
 
-/** Set scan schedule for a single watch target (upsert). */
+/** Set scan schedule for a single watch target (upsert). Caller must own the target. */
 export const setForTarget = mutation({
   args: {
     watchTargetId: v.id("watchTargets"),
@@ -46,7 +63,10 @@ export const setForTarget = mutation({
     rawDescription: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getOrCreateUserId(ctx);
     const { watchTargetId, ...rest } = args;
+    const target = await ctx.db.get(watchTargetId);
+    if (!target || target.userId !== userId) throw new Error("Unauthorized");
     const now = Date.now();
     const existing = await ctx.db
       .query("watchTargetSchedule")
@@ -66,10 +86,13 @@ export const setForTarget = mutation({
   },
 });
 
-/** Remove per-target schedule for a watch target. */
+/** Remove per-target schedule for a watch target. Caller must own the target. */
 export const removeForTarget = mutation({
   args: { watchTargetId: v.id("watchTargets") },
   handler: async (ctx, { watchTargetId }) => {
+    const userId = await getOrCreateUserId(ctx);
+    const target = await ctx.db.get(watchTargetId);
+    if (!target || target.userId !== userId) throw new Error("Unauthorized");
     const row = await ctx.db
       .query("watchTargetSchedule")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -78,7 +101,7 @@ export const removeForTarget = mutation({
   },
 });
 
-/** Set schedule from structured values (called after NL parse). */
+/** Set current user's global scan schedule. */
 export const set = mutation({
   args: {
     timezone: v.string(),
@@ -93,10 +116,15 @@ export const set = mutation({
     rawDescription: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getOrCreateUserId(ctx);
     const now = Date.now();
-    const existing = await ctx.db.query("scanSchedule").first();
+    const existing = await ctx.db
+      .query("scanSchedule")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
     const doc = {
       ...args,
+      userId,
       updatedAt: now,
     };
     if (existing) {
@@ -145,14 +173,23 @@ function mondayOfWeek(dateKey: string): string {
   return `${date.getFullYear()}-${mm}-${dd}`;
 }
 
-/** Check if we should run daily/weekly and trigger scan (global and per-target). Runs every 15 min from cron. */
+/** Check if we should run daily/weekly and trigger scan (per-user and per-target). Runs every 15 min from cron. */
 export const checkAndTrigger = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const globalSchedule = await ctx.db.query("scanSchedule").first();
+    const globalSchedules = await ctx.db.query("scanSchedule").collect();
 
-    // --- Global schedule: scan all targets ---
-    if (globalSchedule) {
+    // --- Per-user global schedule: scan all targets for that user ---
+    for (const globalSchedule of globalSchedules) {
+      const userId = globalSchedule.userId;
+      if (!userId) continue;
+      const userTargets = await ctx.db
+        .query("watchTargets")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect();
+      const targetIds = userTargets.map((t) => t._id);
+      if (targetIds.length === 0) continue;
+
       const tz = globalSchedule.timezone || "UTC";
       const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
       const nowSlot = hour * 60 + minute;
@@ -162,14 +199,20 @@ export const checkAndTrigger = internalMutation({
       if (globalSchedule.dailyEnabled && Math.abs(nowSlot - dailySlot) < 20) {
         const skipWeekdays = globalSchedule.weekdaysOnly && (weekday === 0 || weekday === 6);
         if (!skipWeekdays && globalSchedule.lastDailyRunDate !== dateKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, { period: "daily" });
+          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
+            period: "daily",
+            targetIds,
+          });
           await ctx.db.patch(globalSchedule._id, { lastDailyRunDate: dateKey, updatedAt: Date.now() });
         }
       }
       if (globalSchedule.weeklyEnabled && globalSchedule.weeklyDayOfWeek === weekday && Math.abs(nowSlot - weeklySlot) < 20) {
         const weekKey = mondayOfWeek(dateKey);
         if (globalSchedule.lastWeeklyRunDate !== weekKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, { period: "weekly" });
+          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
+            period: "weekly",
+            targetIds,
+          });
           await ctx.db.patch(globalSchedule._id, { lastWeeklyRunDate: weekKey, updatedAt: Date.now() });
         }
       }

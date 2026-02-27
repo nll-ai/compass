@@ -2,23 +2,55 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
     const limit = args.limit ?? 20;
-    return await ctx.db
+    const all = await ctx.db
       .query("digestRuns")
       .withIndex("by_generatedAt")
       .order("desc")
-      .take(limit);
+      .take(limit * 3);
+    const filtered: Doc<"digestRuns">[] = [];
+    for (const run of all) {
+      const scanRun = await ctx.db.get(run.scanRunId);
+      if (
+        scanRun?.targetIds?.length &&
+        scanRun.targetIds.every((id) => userTargetIdSet.has(id))
+      ) {
+        filtered.push(run);
+        if (filtered.length >= limit) break;
+      }
+    }
+    return filtered;
   },
 });
 
 export const get = query({
   args: { id: v.id("digestRuns") },
   handler: async (ctx, { id }) => {
-    return await ctx.db.get(id);
+    const run = await ctx.db.get(id);
+    if (!run) return null;
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
+    const scanRun = await ctx.db.get(run.scanRunId);
+    if (!scanRun?.targetIds?.length) return null;
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userSet = new Set(userTargets.map((t) => t._id));
+    if (!scanRun.targetIds.every((tid) => userSet.has(tid))) return null;
+    return run;
   },
 });
 
@@ -33,10 +65,14 @@ export const getBySourceLinksHash = query({
   },
 });
 
-/** List Signal Reports (digest runs) that include this watch target, newest first. */
+/** List Signal Reports (digest runs) that include this watch target, newest first. Caller must own the target. */
 export const listSignalReportsForTarget = query({
   args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
   handler: async (ctx, { watchTargetId, limit = 20 }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const target = await ctx.db.get(watchTargetId);
+    if (!target || target.userId !== userId) return [];
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -52,6 +88,10 @@ export const listSignalReportsForTarget = query({
 export const getLatestForTarget = query({
   args: { watchTargetId: v.id("watchTargets") },
   handler: async (ctx, { watchTargetId }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
+    const target = await ctx.db.get(watchTargetId);
+    if (!target || target.userId !== userId) return null;
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -71,10 +111,25 @@ export const getLatestForTarget = query({
   },
 });
 
-/** Delete a digest run and all its digest items. */
+/** Delete a digest run and all its digest items. Caller must own the run. */
 export const remove = mutation({
   args: { id: v.id("digestRuns") },
   handler: async (ctx, { id }) => {
+    const run = await ctx.db.get(id);
+    if (!run) return { deleted: false };
+    const userId = await getOrCreateUserId(ctx);
+    const scanRun = await ctx.db.get(run.scanRunId);
+    if (!scanRun?.targetIds?.length) {
+      throw new Error("Unauthorized");
+    }
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userSet = new Set(userTargets.map((t) => t._id));
+    if (!scanRun.targetIds.every((tid) => userSet.has(tid))) {
+      throw new Error("Unauthorized");
+    }
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_digestRun", (q) => q.eq("digestRunId", id))

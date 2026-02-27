@@ -1,13 +1,17 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
 export const listActive = query({
   args: {},
   handler: async (ctx) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
     return await ctx.db
       .query("watchTargets")
-      .withIndex("by_active", (q) => q.eq("active", true))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("active"), true))
       .order("desc")
       .collect();
   },
@@ -16,22 +20,80 @@ export const listActive = query({
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("watchTargets").order("desc").collect();
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    return await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
   },
 });
 
 export const get = query({
   args: { id: v.id("watchTargets") },
   handler: async (ctx, { id }) => {
-    return await ctx.db.get(id);
+    const doc = await ctx.db.get(id);
+    if (!doc) return null;
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId || doc.userId !== userId) return null;
+    return doc;
   },
 });
 
 export const getByIds = query({
   args: { ids: v.array(v.id("watchTargets")) },
   handler: async (ctx, { ids }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
     const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
-    return results.filter((doc) => doc != null);
+    return results.filter(
+      (doc): doc is NonNullable<typeof doc> =>
+        doc != null && doc.userId === userId,
+    );
+  },
+});
+
+/** Internal: get watch targets by ids (no auth). Used by digest pipeline. */
+export const getByIdsInternal = internalQuery({
+  args: { ids: v.array(v.id("watchTargets")) },
+  handler: async (ctx, { ids }) => {
+    const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return results.filter((doc): doc is NonNullable<typeof doc> => doc != null);
+  },
+});
+
+function checkScanSecret(secret: string): boolean {
+  return (
+    typeof process.env.SCAN_SECRET === "string" &&
+    process.env.SCAN_SECRET.length > 0 &&
+    secret === process.env.SCAN_SECRET
+  );
+}
+
+/** Server-only: get watch targets by ids using scan secret. Used by POST /api/scan. */
+export const getByIdsForServer = query({
+  args: {
+    secret: v.string(),
+    ids: v.array(v.id("watchTargets")),
+  },
+  handler: async (ctx, { secret, ids }) => {
+    if (!checkScanSecret(secret)) return [];
+    const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return results.filter((doc): doc is NonNullable<typeof doc> => doc != null);
+  },
+});
+
+/** Server-only: list active watch targets using scan secret. Used by POST /api/scan when no targetIds. */
+export const listActiveForServer = query({
+  args: { secret: v.string() },
+  handler: async (ctx, { secret }) => {
+    if (!checkScanSecret(secret)) return [];
+    return await ctx.db
+      .query("watchTargets")
+      .filter((q) => q.eq(q.field("active"), true))
+      .order("desc")
+      .collect();
   },
 });
 
@@ -54,9 +116,11 @@ const watchTargetValidator = {
 export const create = mutation({
   args: watchTargetValidator,
   handler: async (ctx, args) => {
+    const userId = await getOrCreateUserId(ctx);
     const now = Date.now();
     return await ctx.db.insert("watchTargets", {
       ...args,
+      userId,
       createdAt: now,
       updatedAt: now,
     });
@@ -70,6 +134,9 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const { id, ...rest } = args;
+    const userId = await getOrCreateUserId(ctx);
+    const doc = await ctx.db.get(id);
+    if (!doc || doc.userId !== userId) throw new Error("Unauthorized");
     await ctx.db.patch(id, { ...rest, updatedAt: Date.now() });
     return id;
   },
@@ -79,6 +146,9 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("watchTargets") },
   handler: async (ctx, { id }) => {
+    const userId = await getOrCreateUserId(ctx);
+    const doc = await ctx.db.get(id);
+    if (!doc || doc.userId !== userId) throw new Error("Unauthorized");
     const digestItems = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))

@@ -1,10 +1,17 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import {
+  getOrCreateUserId,
+  getUserIdFromIdentity,
+  userOwnsDigestRun,
+  userOwnsTarget,
+} from "./lib/auth";
 
 export const listByDigestRun = query({
   args: { digestRunId: v.id("digestRuns") },
   handler: async (ctx, { digestRunId }) => {
+    if (!(await userOwnsDigestRun(ctx, digestRunId))) return [];
     return await ctx.db
       .query("digestItems")
       .withIndex("by_digestRun", (q) => q.eq("digestRunId", digestRunId))
@@ -12,10 +19,11 @@ export const listByDigestRun = query({
   },
 });
 
-/** List signals (digest items) for a watch target across all digest runs, newest first. */
+/** List signals (digest items) for a watch target across all digest runs, newest first. Caller must own the target. */
 export const listByWatchTarget = query({
   args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
   handler: async (ctx, { watchTargetId, limit = 60 }) => {
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return [];
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -40,6 +48,10 @@ export const setFeedback = mutation({
   },
   handler: async (ctx, { digestItemId, feedback }) => {
     const item = await ctx.db.get(digestItemId);
+    if (!item) throw new Error("Not found");
+    const userId = await getOrCreateUserId(ctx);
+    const target = await ctx.db.get(item.watchTargetId);
+    if (!target || target.userId !== userId) throw new Error("Unauthorized");
     const now = Date.now();
     await ctx.db.patch(digestItemId, { feedback, feedbackAt: now });
     if (item) {
@@ -57,12 +69,21 @@ export const setFeedback = mutation({
 
 const ABSTRACT_SNIPPET_LEN = 300;
 
-/** Returns recent user feedback for digest prompt tuning: good/bad with watchTargetId and raw snippets. */
+/** Returns recent user feedback for digest prompt tuning: good/bad with watchTargetId and raw snippets. Scoped to current user's targets. */
 export const getFeedbackForPrompt = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit = 40 }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return { good: [], bad: [] };
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
     const all = await ctx.db.query("digestItems").collect();
-    const withFeedback = all.filter((d) => d.feedback != null);
+    const withFeedback = all.filter(
+      (d) => d.feedback != null && userTargetIdSet.has(d.watchTargetId),
+    );
     withFeedback.sort((a, b) => (b.feedbackAt ?? 0) - (a.feedbackAt ?? 0));
     const recent = withFeedback.slice(0, limit);
 

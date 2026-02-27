@@ -15,12 +15,16 @@ function computeSourceLinksHash(rawItemIds: string[]): string {
 export const generate = internalAction({
   args: { scanRunId: v.id("scanRuns") },
   handler: async (ctx, { scanRunId }) => {
-    const [newItems, targets, scan] = await Promise.all([
+    const scan = await ctx.runQuery(internal.scans.getScanRun, { id: scanRunId });
+    if (!scan) return;
+    const targetIds = scan.targetIds ?? [];
+    const [newItems, targets] = await Promise.all([
       ctx.runQuery(internal.rawItems.getNewByScanRun, { scanRunId }),
-      ctx.runQuery(api.watchTargets.listActive, {}),
-      ctx.runQuery(api.scans.get, { id: scanRunId }),
+      targetIds.length > 0
+        ? ctx.runQuery(internal.watchTargets.getByIdsInternal, { ids: targetIds })
+        : [],
     ]);
-    if (newItems.length === 0 && scan?.period !== "weekly") return;
+    if (newItems.length === 0 && scan.period !== "weekly") return;
     const period = scan?.period ?? "daily";
 
     const limit = 50;

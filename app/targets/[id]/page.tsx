@@ -139,6 +139,7 @@ export default function TargetDetailPage() {
                 const res = await fetch("/api/scan", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
+                  credentials: "include",
                   body: JSON.stringify({
                     period: "daily",
                     targetIds: [id],
@@ -202,6 +203,7 @@ export default function TargetDetailPage() {
                 const res = await fetch("/api/scan", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
+                  credentials: "include",
                   body: JSON.stringify({
                     period: "daily",
                     targetIds: [id],
@@ -257,7 +259,7 @@ export default function TargetDetailPage() {
           )}
           {scanningComprehensive ? "Running…" : "Run comprehensive search"}
         </button>
-        <Link href="/" className="muted" style={{ fontSize: "0.9rem" }}>
+        <Link href="/dashboard" className="muted" style={{ fontSize: "0.9rem" }}>
           View recent scans on Dashboard →
         </Link>
         {scanMessage && (

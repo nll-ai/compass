@@ -15,6 +15,7 @@ import type * as digestItems from "../digestItems.js";
 import type * as digestRuns from "../digestRuns.js";
 import type * as digests from "../digests.js";
 import type * as feedbackForScan from "../feedbackForScan.js";
+import type * as lib_auth from "../lib/auth.js";
 import type * as lib_digestHelpers from "../lib/digestHelpers.js";
 import type * as lib_formatters from "../lib/formatters.js";
 import type * as lib_slack_builder from "../lib/slack_builder.js";
@@ -34,6 +35,7 @@ import type * as sources_openfda from "../sources/openfda.js";
 import type * as sources_patents from "../sources/patents.js";
 import type * as sources_pubmed from "../sources/pubmed.js";
 import type * as sources_rss from "../sources/rss.js";
+import type * as users from "../users.js";
 import type * as watchTargets from "../watchTargets.js";
 
 import type {
@@ -50,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   digestRuns: typeof digestRuns;
   digests: typeof digests;
   feedbackForScan: typeof feedbackForScan;
+  "lib/auth": typeof lib_auth;
   "lib/digestHelpers": typeof lib_digestHelpers;
   "lib/formatters": typeof lib_formatters;
   "lib/slack_builder": typeof lib_slack_builder;
@@ -69,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   "sources/patents": typeof sources_patents;
   "sources/pubmed": typeof sources_pubmed;
   "sources/rss": typeof sources_rss;
+  users: typeof users;
   watchTargets: typeof watchTargets;
 }>;
 

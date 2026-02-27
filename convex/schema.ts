@@ -2,7 +2,18 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  /** Users from WorkOS; created on first sign-in. */
+  users: defineTable({
+    workosId: v.string(),
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_workosId", ["workosId"]),
+
   watchTargets: defineTable({
+    userId: v.optional(v.id("users")),
     name: v.string(),
     displayName: v.string(),
     type: v.union(v.literal("drug"), v.literal("target"), v.literal("company")),
@@ -22,6 +33,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_userId", ["userId"])
     .index("by_active", ["active"])
     .index("by_therapeutic_area", ["therapeuticArea"]),
 
@@ -41,6 +53,8 @@ export default defineSchema({
     totalItemsFound: v.number(),
     newItemsFound: v.number(),
     error: v.optional(v.string()),
+    /** Targets included in this run; used to scope listRecent by user. */
+    targetIds: v.optional(v.array(v.id("watchTargets"))),
   })
     .index("by_status", ["status"])
     .index("by_scheduledFor", ["scheduledFor"]),
@@ -148,6 +162,7 @@ export default defineSchema({
     .index("by_reviewed", ["reviewedAt"]),
 
   slackConfig: defineTable({
+    userId: v.optional(v.id("users")),
     webhookUrl: v.string(),
     channel: v.string(),
     dailyEnabled: v.boolean(),
@@ -163,7 +178,7 @@ export default defineSchema({
     active: v.boolean(),
     lastTestedAt: v.optional(v.number()),
     lastTestStatus: v.optional(v.string()),
-  }),
+  }).index("by_userId", ["userId"]),
 
   sourceConfigs: defineTable({
     source: v.string(),
@@ -176,10 +191,11 @@ export default defineSchema({
   }).index("by_source", ["source"]),
 
   chatSessions: defineTable({
+    userId: v.optional(v.id("users")),
     title: v.optional(v.string()),
     createdAt: v.number(),
     lastMessageAt: v.number(),
-  }),
+  }).index("by_userId", ["userId"]),
 
   chatMessages: defineTable({
     sessionId: v.id("chatSessions"),
@@ -195,8 +211,9 @@ export default defineSchema({
     fetchedAt: v.number(),
   }).index("by_url", ["url"]),
 
-  /** User-configured scan schedule for all targets (singleton). */
+  /** User-configured scan schedule for all targets (one row per user). */
   scanSchedule: defineTable({
+    userId: v.optional(v.id("users")),
     timezone: v.string(),
     dailyEnabled: v.boolean(),
     dailyHour: v.number(),
@@ -210,7 +227,9 @@ export default defineSchema({
     lastDailyRunDate: v.optional(v.string()),
     lastWeeklyRunDate: v.optional(v.string()),
     updatedAt: v.number(),
-  }).index("by_updatedAt", ["updatedAt"]),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_updatedAt", ["updatedAt"]),
 
   /** Thumbs up/down on source links (raw items). Thumbs down = hide from timeline. */
   sourceLinkFeedback: defineTable({

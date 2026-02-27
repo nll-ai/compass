@@ -1,7 +1,8 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { ALL_SOURCE_IDS, SOURCES_TOTAL } from "./lib/sourceIds";
+import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
 function checkScanSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
@@ -10,12 +11,26 @@ function checkScanSecret(secret: string): boolean {
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
     const limit = args.limit ?? 10;
-    return await ctx.db
+    const all = await ctx.db
       .query("scanRuns")
       .withIndex("by_scheduledFor")
       .order("desc")
-      .take(limit);
+      .take(limit * 3);
+    const filtered = all.filter(
+      (run) =>
+        run.targetIds &&
+        run.targetIds.length > 0 &&
+        run.targetIds.every((id) => userTargetIdSet.has(id)),
+    );
+    return filtered.slice(0, limit);
   },
 });
 
@@ -57,6 +72,7 @@ export const createRunForServer = mutation({
       sourcesCompleted: 0,
       totalItemsFound: 0,
       newItemsFound: 0,
+      targetIds: targetIds,
     });
     for (const source of sourcesToRun) {
       await ctx.db.insert("scanSourceStatus", {
@@ -121,16 +137,49 @@ export const updateSourceStatusFromServer = mutation({
   },
 });
 
-export const get = query({
+/** Internal: get scan run by id (no auth). Used by digest pipeline and cron. */
+export const getScanRun = internalQuery({
   args: { id: v.id("scanRuns") },
-  handler: async (ctx, { id }) => {
-    return await ctx.db.get(id);
+  handler: async (ctx, { id }) => ctx.db.get(id),
+});
+
+export const get = query({
+  args: {
+    id: v.id("scanRuns"),
+    /** Server-only: when provided and valid, skips user ownership check (for scan pipeline). */
+    secret: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, secret }) => {
+    const run = await ctx.db.get(id);
+    if (!run) return null;
+    if (secret != null && checkScanSecret(secret)) return run;
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
+    if (!run.targetIds?.length) return null;
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userSet = new Set(userTargets.map((t) => t._id));
+    return run.targetIds.every((tid) => userSet.has(tid)) ? run : null;
   },
 });
 
 export const getSourceStatuses = query({
   args: { scanRunId: v.id("scanRuns") },
   handler: async (ctx, { scanRunId }) => {
+    const run = await ctx.db.get(scanRunId);
+    if (!run) return [];
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    if (run.targetIds?.length) {
+      const userTargets = await ctx.db
+        .query("watchTargets")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect();
+      const userSet = new Set(userTargets.map((t) => t._id));
+      if (!run.targetIds.every((id) => userSet.has(id))) return [];
+    }
     return await ctx.db
       .query("scanSourceStatus")
       .withIndex("by_scanRun", (q) => q.eq("scanRunId", scanRunId))
@@ -152,6 +201,7 @@ export const scheduleScan = internalMutation({
       sourcesCompleted: 0,
       totalItemsFound: 0,
       newItemsFound: 0,
+      targetIds: args.targetIds,
     });
     for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
@@ -176,6 +226,15 @@ export const runScan = mutation({
     targetIds: v.optional(v.array(v.id("watchTargets"))),
   },
   handler: async (ctx, args) => {
+    const userId = await getOrCreateUserId(ctx);
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
+    const targetIds =
+      args.targetIds?.filter((id) => userTargetIdSet.has(id)) ??
+      userTargets.map((t) => t._id);
     const scanRunId = await ctx.db.insert("scanRuns", {
       scheduledFor: Date.now(),
       status: "pending",
@@ -184,6 +243,7 @@ export const runScan = mutation({
       sourcesCompleted: 0,
       totalItemsFound: 0,
       newItemsFound: 0,
+      targetIds: targetIds.length > 0 ? targetIds : undefined,
     });
     for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
@@ -196,7 +256,7 @@ export const runScan = mutation({
     await ctx.scheduler.runAfter(0, internal.scans.callScanApi, {
       scanRunId,
       period: args.period,
-      targetIds: args.targetIds,
+      targetIds: targetIds.length > 0 ? targetIds : undefined,
     });
     return scanRunId;
   },

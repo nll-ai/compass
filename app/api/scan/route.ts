@@ -91,8 +91,11 @@ export async function POST(request: Request) {
   }
 
   const targets = targetIds?.length
-    ? await client.query(api.watchTargets.getByIds, { ids: targetIds as Id<"watchTargets">[] })
-    : await client.query(api.watchTargets.listActive, {});
+    ? await client.query(api.watchTargets.getByIdsForServer, {
+        secret: effectiveSecret,
+        ids: targetIds as Id<"watchTargets">[],
+      })
+    : await client.query(api.watchTargets.listActiveForServer, { secret: effectiveSecret });
 
   const sourcesRan = sourceIdsToRun ?? [...ALL_SOURCE_IDS];
 
@@ -219,7 +222,10 @@ export async function POST(request: Request) {
     newItemsFound: newFound,
   });
 
-  const scan = await client.query(api.scans.get, { id: scanRunId });
+  const scan = await client.query(api.scans.get, {
+    id: scanRunId,
+    secret: effectiveSecret,
+  });
   if (newFound > 0 || scan?.period === "weekly") {
     const newItems = await client.query(api.rawItems.getNewByScanRunFromServer, { secret: effectiveSecret, scanRunId });
     const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });

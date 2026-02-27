@@ -7,7 +7,8 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
 1. Copy `.env.example` to `.env.local` and populate values.
 2. Install dependencies:
    - `npm install`
-3. Start development server:
+3. **Auth (WorkOS)**: Configure [WorkOS AuthKit](https://workos.com/docs/user-management/nextjs) and set `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD` (min 32 chars), and `NEXT_PUBLIC_WORKOS_REDIRECT_URI` (e.g. `http://localhost:3000/callback`). In the WorkOS dashboard set Redirect URI, Sign-in redirect, and Sign-out redirect. Generate a JWT key pair for Convex: run `node scripts/generate-jwt-keys.mjs`, add the printed private key to `.env.local` as `CONVEX_JWT_PRIVATE_KEY`, and ensure `convex/jwks-public.json` (or the inlined JWKS in `convex/auth.config.ts`) is in sync. Set `CONVEX_JWT_ISSUER` and `CONVEX_JWT_AUDIENCE` in the Convex dashboard if you override the defaults.
+4. Start development server:
    - `npm run dev`
 
 ## Available Scripts
@@ -65,3 +66,7 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
    - This pushes your `convex/` code to the project’s **production** deployment. Use that deployment’s URL for your production app (e.g. set `NEXT_PUBLIC_CONVEX_URL` in your hosting env).
 
 3. **Environment variables in the cloud**: For any **cloud** deployment (dev or prod), set API keys in the [Convex dashboard](https://dashboard.convex.dev) → your deployment → **Settings → Environment Variables** (`OPENAI_API_KEY`, `EXA_API_KEY`, etc.). Local deployments don’t use the dashboard’s env vars; cloud deployments do.
+
+## Authentication
+
+Compass uses [WorkOS AuthKit](https://workos.com/docs/user-management/nextjs) for sign-in and sessions. The app issues its own short-lived JWTs for Convex so the backend can enforce identity and scope data by user. All watch targets, digest runs, and scan runs are scoped to the signed-in user. The scan pipeline (`POST /api/scan`) still uses `SCAN_SECRET` and does not require a user session; it writes scan data for the targets it is given. Redirect URIs and sign-in/sign-out URLs must be configured in the [WorkOS dashboard](https://dashboard.workos.com/). Existing data before auth was added has no `userId`; you can backfill to a default user or treat legacy rows as unowned until assigned.
