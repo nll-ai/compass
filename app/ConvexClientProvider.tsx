@@ -26,7 +26,12 @@ function useConvexTokenAuth() {
         const res = await fetch("/api/convex-token", {
           cache: "no-store",
           credentials: "include",
+          redirect: "manual",
         });
+        if (res.type === "opaqueredirect" || res.status === 302 || res.status === 307) {
+          setTokenResult({ token: null, fetched: true });
+          return null;
+        }
         const data = (await res.json()) as { token?: string | null };
         const token = data.token ?? null;
         setTokenResult({ token, fetched: true });

@@ -8,7 +8,6 @@ export default authkitMiddleware({
       "/sign-in",
       "/callback",
       "/sw.js",
-      "/api/convex-token",
       "/api/scan",
       "/_next/static/:path*",
       "/_next/image",
