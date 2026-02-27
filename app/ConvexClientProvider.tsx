@@ -24,7 +24,7 @@ function useConvexTokenAuth() {
     }): Promise<string | null> => {
       try {
         const res = await fetch("/api/convex-token", {
-          cache: forceRefreshToken ? "no-store" : "default",
+          cache: "no-store",
           credentials: "include",
         });
         const data = (await res.json()) as { token?: string | null };

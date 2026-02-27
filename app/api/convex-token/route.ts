@@ -9,19 +9,21 @@ const AUDIENCE = "compass-convex";
 const KID = "compass-1772162961019";
 const EXPIRY_SEC = 10 * 60; // 10 minutes
 
+const NO_STORE = { "Cache-Control": "private, no-store" };
+
 export async function GET() {
   try {
     const { user } = await withAuth();
     if (!user) {
       return NextResponse.json(
         { token: null, error: "not_signed_in" },
-        { status: 401 },
+        { status: 401, headers: NO_STORE },
       );
     }
     if (!isEmailAllowed(user.email)) {
       return NextResponse.json(
         { token: null, error: "email_not_allowed" },
-        { status: 401 },
+        { status: 401, headers: NO_STORE },
       );
     }
     const privateKeyPem = process.env.CONVEX_JWT_PRIVATE_KEY;
@@ -29,7 +31,7 @@ export async function GET() {
       console.error("CONVEX_JWT_PRIVATE_KEY is not set");
       return NextResponse.json(
         { error: "Server auth not configured" },
-        { status: 500 },
+        { status: 500, headers: NO_STORE },
       );
     }
     const { importPKCS8 } = await import("jose");
@@ -52,12 +54,12 @@ export async function GET() {
       .setIssuedAt(now)
       .setExpirationTime(now + EXPIRY_SEC)
       .sign(privateKey);
-    return NextResponse.json({ token });
+    return NextResponse.json({ token }, { headers: NO_STORE });
   } catch (e) {
     console.error("Convex token error:", e);
     return NextResponse.json(
       { token: null, error: "token_error" },
-      { status: 401 },
+      { status: 401, headers: NO_STORE },
     );
   }
 }

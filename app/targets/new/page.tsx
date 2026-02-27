@@ -1,13 +1,9 @@
-"use client";
-
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useConvexAuth } from "@/app/ConvexClientProvider";
-import { AddTargetForm } from "@/components/compass/AddTargetForm";
+import { getAuthSafe } from "@/lib/auth";
+import { NewTargetFormSection } from "./NewTargetFormSection";
 
-export default function NewTargetPage() {
-  const router = useRouter();
-  const { isLoading, isAuthenticated } = useConvexAuth();
+export default async function NewTargetPage() {
+  const { user, signInUrl } = await getAuthSafe();
 
   return (
     <div className="stack">
@@ -20,13 +16,14 @@ export default function NewTargetPage() {
       <p className="muted" style={{ margin: 0 }}>
         Add a new program or watch target to monitor. We'll look it up and pre-fill the details.
       </p>
-      {isLoading ? (
-        <p className="muted">Checking sign-in…</p>
-      ) : !isAuthenticated ? (
+      {!user ? (
         <>
           <p className="muted" style={{ color: "var(--error, #b91c1c)" }}>
             You need to sign in to add watch targets.{" "}
-            <Link href="/sign-in" style={{ color: "var(--link, #2563eb)", fontWeight: 600 }}>
+            <Link
+              href={signInUrl ?? "/sign-in"}
+              style={{ color: "var(--link, #2563eb)", fontWeight: 600 }}
+            >
               Sign in
             </Link>
           </p>
@@ -35,12 +32,7 @@ export default function NewTargetPage() {
           </Link>
         </>
       ) : (
-        <>
-          <AddTargetForm onAdded={() => router.push("/targets")} />
-          <Link href="/targets" className="muted" style={{ fontSize: "0.9rem" }}>
-            ← Back to Watch Targets
-          </Link>
-        </>
+        <NewTargetFormSection />
       )}
     </div>
   );
