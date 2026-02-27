@@ -20,7 +20,7 @@ const jwksDataUri =
   btoa(JSON.stringify(jwksPublic));
 
 // Match app's NEXT_PUBLIC_APP_URL / issuer. Override via Convex dashboard env if needed.
-const issuer = "https://compassci.vercel.app";
+const issuer = "https://compass-five-silk.vercel.app";
 const applicationID = "compass-convex";
 
 export default {

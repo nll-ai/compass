@@ -80,12 +80,12 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
    | `NEXT_PUBLIC_CONVEX_URL` | `https://careful-frog-794.convex.cloud` (production Convex) |
    | `CONVEX_JWT_PRIVATE_KEY` | Same as in `.env.local` (full PEM, including `\n` if you paste multi-line) |
    | `SCAN_SECRET` | Same value as in Convex dashboard env vars (so `/api/scan` can authenticate) |
-   | `NEXT_PUBLIC_APP_URL` | Your Vercel URL, e.g. `https://compassci.vercel.app` |
-   | WorkOS | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD`, `NEXT_PUBLIC_WORKOS_REDIRECT_URI` (use your production callback URL, e.g. `https://compassci.vercel.app/callback`) |
+   | `NEXT_PUBLIC_APP_URL` | Your Vercel URL, e.g. `https://compass-five-silk.vercel.app` |
+   | WorkOS | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD`, `NEXT_PUBLIC_WORKOS_REDIRECT_URI` (use your production callback URL, e.g. `https://compass-five-silk.vercel.app/callback`) |
    | Auth allowlist | `AUTH_ALLOWED_DOMAINS`, `AUTH_ALLOWED_EMAILS` (same as local if desired) |
    | Optional (for scan/digest) | `OPENAI_API_KEY`, `EXA_API_KEY`, `PUBMED_API_KEY`, etc. — only if you run scans from the deployed app; otherwise scans can be triggered by cron with secrets. |
 
-   In WorkOS dashboard, add your Vercel domain to Redirect URIs (e.g. `https://compassci.vercel.app/callback`, sign-in/sign-out URLs).
+   In WorkOS dashboard, add your Vercel domain to Redirect URIs (e.g. `https://compass-five-silk.vercel.app/callback`, sign-in/sign-out URLs).
 
 3. **Deploy**: Push to your main branch or click **Redeploy** in Vercel. The first build may take a couple of minutes. After deploy, open your Vercel URL and sign in to confirm Convex and auth work.
 

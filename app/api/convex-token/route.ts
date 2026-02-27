@@ -4,7 +4,7 @@ import { withAuth } from "@workos-inc/authkit-nextjs";
 import { isEmailAllowed } from "@/lib/auth-allowlist";
 
 // Must match convex/auth.config.ts issuer exactly (Convex rejects otherwise)
-const ISSUER = "https://compassci.vercel.app";
+const ISSUER = "https://compass-five-silk.vercel.app";
 const AUDIENCE = "compass-convex";
 const KID = "compass-1772162961019";
 const EXPIRY_SEC = 10 * 60; // 10 minutes
