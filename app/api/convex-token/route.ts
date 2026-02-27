@@ -12,8 +12,17 @@ const EXPIRY_SEC = 10 * 60; // 10 minutes
 export async function GET() {
   try {
     const { user } = await withAuth();
-    if (!user || !isEmailAllowed(user.email)) {
-      return NextResponse.json({ token: null }, { status: 401 });
+    if (!user) {
+      return NextResponse.json(
+        { token: null, error: "not_signed_in" },
+        { status: 401 },
+      );
+    }
+    if (!isEmailAllowed(user.email)) {
+      return NextResponse.json(
+        { token: null, error: "email_not_allowed" },
+        { status: 401 },
+      );
     }
     const privateKeyPem = process.env.CONVEX_JWT_PRIVATE_KEY;
     if (!privateKeyPem) {
@@ -46,6 +55,9 @@ export async function GET() {
     return NextResponse.json({ token });
   } catch (e) {
     console.error("Convex token error:", e);
-    return NextResponse.json({ token: null }, { status: 401 });
+    return NextResponse.json(
+      { token: null, error: "token_error" },
+      { status: 401 },
+    );
   }
 }
