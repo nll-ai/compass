@@ -3,7 +3,7 @@
  * to discover relevant 10-K/10-Q filings with query generation/expansion.
  */
 
-import { generateText, tool } from "ai";
+import { generateObject, generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
@@ -50,6 +50,49 @@ async function fetchFilingText(url: string): Promise<string> {
   if (!res.ok) return "";
   const html = await res.text();
   return htmlToPlainText(html, FILING_EXCERPT_MAX_CHARS);
+}
+
+const deriveCompanySchema = z.object({
+  company: z
+    .string()
+    .nullable()
+    .describe("The public company name as it appears in SEC filings (e.g. Regeneron, Pfizer), or null if none can be determined"),
+});
+
+/**
+ * Use LLM to derive the SEC-filing company name from a watch target when company is not set.
+ * E.g. "NPR1 (Regeneron NPR1 agonist)" → Regeneron; "Dupixent" → Regeneron/Sanofi (picks one); "Eylea - Regeneron" → Regeneron.
+ */
+async function deriveCompanyFromTarget(
+  target: ScanTarget,
+  openaiKey: string
+): Promise<string | null> {
+  const name = target.name?.trim() ?? "";
+  const displayName = target.displayName?.trim() ?? "";
+  const aliases = (target.aliases ?? []).filter(Boolean).join(", ") || "—";
+  const type = target.type ?? "—";
+  const notes = (target.notes ?? "").trim().slice(0, 300) || "—";
+  if (!displayName && !name) return null;
+  try {
+    const { object } = await generateObject({
+      model: openai("gpt-4o-mini"),
+      schema: deriveCompanySchema,
+      prompt: `You are identifying the public company that would file SEC 10-K/10-Q reports relevant to this watch target. Return the company name as it would appear in SEC EDGAR (e.g. "Regeneron", "Pfizer", "Johnson & Johnson"). Return only one company; for co-developed drugs pick the primary sponsor. If this is clearly a company-level target (ticker/name is the company), use that. If you cannot determine a listed company, return null.
+
+Watch target:
+- name: ${name || "—"}
+- displayName: ${displayName || "—"}
+- type: ${type}
+- aliases: ${aliases}
+- notes: ${notes}
+
+Reply with the single company name or null.`,
+    });
+    const c = object.company?.trim();
+    return c && c.length >= 2 ? c : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Use LLM to extract 1–3 sentences about the watch target(s) from an SEC filing excerpt. */
@@ -187,8 +230,68 @@ export async function searchSECFullTextAPI(
   return { hits, total };
 }
 
+/** Fetch SEC company_tickers.json. */
+async function getSECCompanyList(): Promise<
+  { companies: CompanyTickerEntry[]; error?: string }
+> {
+  const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
+    headers: { "User-Agent": getSECUserAgent(), Accept: "application/json" },
+  });
+  if (!res.ok) {
+    const error = `SEC EDGAR company list returned ${res.status}.${res.status === 403 ? SEC_403_MESSAGE : ""}`;
+    return { companies: [], error };
+  }
+  const data = (await res.json()) as Record<string, CompanyTickerEntry>;
+  return { companies: Object.values(data) };
+}
+
+/** Match a search term against SEC companies: title/ticker includes or equals term. Tries full term, then first word (e.g. "Regeneron Pharmaceuticals" → "regeneron"). */
+function findSECCompanyMatch(companies: CompanyTickerEntry[], term: string): CompanyTickerEntry | null {
+  const lower = term.trim().toLowerCase();
+  if (!lower) return null;
+  const match = companies.find((c) => {
+    const title = (c.title ?? "").toLowerCase();
+    const ticker = (c.ticker ?? "").toLowerCase();
+    return title.includes(lower) || ticker === lower || title === lower;
+  });
+  if (match) return match;
+  const firstWord = lower.split(/\s+/)[0] ?? "";
+  if (firstWord.length < 2) return null;
+  return companies.find((c) => {
+    const title = (c.title ?? "").toLowerCase();
+    const ticker = (c.ticker ?? "").toLowerCase();
+    return title.includes(firstWord) || ticker === firstWord || title === firstWord;
+  }) ?? null;
+}
+
+/**
+ * Resolve a company name or ticker to the SEC company list. Returns ticker, full title, and a short
+ * displayName (first word, title-case) for use in the Company field so stored values are SEC-searchable.
+ */
+export async function resolveCompanyToSEC(companyOrTicker: string): Promise<{
+  ticker: string;
+  title: string;
+  displayName: string;
+} | null> {
+  const { companies, error } = await getSECCompanyList();
+  if (error || companies.length === 0) return null;
+  const match = findSECCompanyMatch(companies, companyOrTicker);
+  if (!match) return null;
+  const firstWord = (match.title ?? "").trim().split(/\s+/)[0] ?? "";
+  const displayName =
+    firstWord.length > 0
+      ? firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase()
+      : match.title ?? match.ticker;
+  return {
+    ticker: match.ticker,
+    title: match.title ?? match.ticker,
+    displayName,
+  };
+}
+
 /**
  * Company lookup: SEC company list + submissions for a given name/ticker. Returns 10-K/10-Q filings.
+ * Uses full-term match then first-word fallback so e.g. "Regeneron Pharmaceuticals" matches REGENERON PHARMACEUTICALS, INC.
  */
 export async function searchSECByCompanyAPI(
   companyOrTicker: string,
@@ -201,21 +304,9 @@ export async function searchSECByCompanyAPI(
   const term = companyOrTicker.trim().toLowerCase();
   if (!term) return { hits: [] };
 
-  const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
-    headers: { "User-Agent": getSECUserAgent(), Accept: "application/json" },
-  });
-  if (!res.ok) {
-    const error = `SEC EDGAR company list returned ${res.status}.${res.status === 403 ? SEC_403_MESSAGE : ""}`;
-    return { hits: [], error };
-  }
-
-  const data = (await res.json()) as Record<string, CompanyTickerEntry>;
-  const companies = Object.values(data);
-  const match = companies.find((c) => {
-    const title = (c.title ?? "").toLowerCase();
-    const ticker = (c.ticker ?? "").toLowerCase();
-    return title.includes(term) || ticker === term || title === term;
-  });
+  const { companies, error } = await getSECCompanyList();
+  if (error) return { hits: [], error };
+  const match = findSECCompanyMatch(companies, term);
   if (!match) return { hits: [] };
 
   const cikPadded = padCik(match.cik_str);
@@ -330,11 +421,15 @@ export async function runSECSearchAgent(
     recordHits(result.hits);
   }
 
-  // Pre-seed with company lookup when target.company is set (company list + submissions API).
+  // Pre-seed with company lookup: use target.company when set, otherwise derive company via LLM from name/displayName/aliases/notes so drug/target watch targets get the sponsor's 10-K/10-Q.
   for (const target of targets) {
-    const company = target.company?.trim();
-    if (!company) continue;
-    const result = await searchSECByCompanyAPI(company, { maxFilings: 25 });
+    let companyCandidate = target.company?.trim() ?? "";
+    if (!companyCandidate) {
+      const derived = await deriveCompanyFromTarget(target, openaiKey);
+      companyCandidate = derived ?? "";
+    }
+    if (!companyCandidate) continue;
+    const result = await searchSECByCompanyAPI(companyCandidate, { maxFilings: 25 });
     if (result.error) lastSECError = result.error;
     recordHits(result.hits);
   }
@@ -390,9 +485,9 @@ export async function runSECSearchAgent(
 Watch targets:
 ${targetSummary}
 
-Baseline: Full-text search by each target's name (e.g. GEN-003) and company lookups for targets with a company have already been run. You should expand coverage by:
-1. Full-text search: Call searchSECFullText with queries that combine the program/drug name (target.name) with phrases like "discontinued", "clinical trial", "terminated", or the company name. The most effective query is often the exact program name (e.g. "GEN-003"). Use quoted phrases for exact match. Use date ranges (e.g. startDate 2015-01-01, endDate 2024-12-31) and forms 10-K, 10-Q when relevant.
-2. Company lookup: For targets with a "company" value, call searchSECByCompany with that company name or ticker to get additional 10-K/10-Q filings. Call again with ticker from aliases if you want more coverage.
+Baseline: Full-text search by each target's name and company lookups (using target.company when set, or an LLM-derived company from displayName/aliases when missing) have already been run. You should expand coverage by:
+1. Full-text search: Call searchSECFullText with queries that combine the program/drug name (target.name) with phrases like "discontinued", "clinical trial", "terminated", or the company name. The most effective query is often the exact program name (e.g. "GEN-003"). Use quoted phrases for exact match. Use date ranges and forms 10-K, 10-Q when relevant.
+2. Company lookup: For targets with a "company" value, or when the target clearly implies a company (e.g. from displayName or aliases), call searchSECByCompany with that company name or ticker to get 10-K/10-Q filings. Call again with ticker from aliases if you want more coverage.
 
 Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text queries and company lookups). After a few tool calls, summarize briefly.`;
 

@@ -112,6 +112,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, scanRunId, message: "No watch targets" });
   }
 
+  // Same ScanTarget shape as eval (eval/edgar/targets.json → run-edgar-eval.ts). company is passed through so EDGAR resolves e.g. "Regeneron Pharmaceuticals" to REGN and returns 10-K/10-Q.
   const scanTargets: ScanTarget[] = targets.map((t) => ({
     _id: t._id,
     name: t.name,
@@ -131,6 +132,7 @@ export async function POST(request: Request) {
     EXA_API_KEY: process.env.EXA_API_KEY,
     PUBMED_API_KEY: process.env.PUBMED_API_KEY,
     PATENTSVIEW_API_KEY: process.env.PATENTSVIEW_API_KEY,
+    SEC_EDGAR_USER_AGENT: process.env.SEC_EDGAR_USER_AGENT,
   };
 
   await client.mutation(api.scans.updateScanStatusFromServer, {
@@ -184,11 +186,10 @@ export async function POST(request: Request) {
       });
       continue;
     }
-    const relevantItems = await filterRelevantItems(
-      result.items,
-      scanTargets,
-      env.OPENAI_API_KEY
-    );
+    // SEC EDGAR items are already curated (company-matched + form-filtered to 10-K/10-Q) and typically lack abstracts, so the strict relevance filter would drop them all. Skip it for EDGAR.
+    const relevantItems = source === "edgar"
+      ? result.items
+      : await filterRelevantItems(result.items, scanTargets, env.OPENAI_API_KEY);
     const itemsToUpsert = await enrichMissingSummaries(
       relevantItems,
       source,

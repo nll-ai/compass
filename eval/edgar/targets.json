@@ -1,0 +1,98 @@
+[
+  {
+    "id": "moderna",
+    "name": "MRNA",
+    "displayName": "Moderna",
+    "type": "company",
+    "company": "Moderna",
+    "aliases": []
+  },
+  {
+    "id": "pfizer",
+    "name": "PFE",
+    "displayName": "Pfizer",
+    "type": "company",
+    "company": "Pfizer",
+    "aliases": []
+  },
+  {
+    "id": "biogen",
+    "name": "BIIB",
+    "displayName": "Biogen",
+    "type": "company",
+    "company": "Biogen",
+    "aliases": []
+  },
+  {
+    "id": "amgen",
+    "name": "AMGN",
+    "displayName": "Amgen",
+    "type": "company",
+    "company": "Amgen",
+    "aliases": []
+  },
+  {
+    "id": "gilead",
+    "name": "GILD",
+    "displayName": "Gilead Sciences",
+    "type": "company",
+    "company": "Gilead",
+    "aliases": []
+  },
+  {
+    "id": "regeneron",
+    "name": "REGN",
+    "displayName": "Regeneron",
+    "type": "company",
+    "company": "Regeneron",
+    "aliases": []
+  },
+  {
+    "id": "regeneron-pharma-npr1",
+    "name": "NPR1",
+    "displayName": "NPR1 (Regeneron NPR1 agonist)",
+    "type": "drug",
+    "company": "Regeneron Pharmaceuticals",
+    "aliases": ["Natriuretic Peptide Receptor 1", "guanylate cyclase receptor NPR1", "Regeneron NPR1 agonist"]
+  },
+  {
+    "id": "vertex",
+    "name": "VRTX",
+    "displayName": "Vertex Pharmaceuticals",
+    "type": "company",
+    "company": "Vertex",
+    "aliases": []
+  },
+  {
+    "id": "bristol-myers",
+    "name": "BMY",
+    "displayName": "Bristol Myers Squibb",
+    "type": "company",
+    "company": "Bristol Myers Squibb",
+    "aliases": []
+  },
+  {
+    "id": "merck",
+    "name": "MRK",
+    "displayName": "Merck",
+    "type": "company",
+    "company": "Merck",
+    "aliases": []
+  },
+  {
+    "id": "eli-lilly",
+    "name": "LLY",
+    "displayName": "Eli Lilly",
+    "type": "company",
+    "company": "Eli Lilly",
+    "aliases": []
+  },
+  {
+    "id": "jnj",
+    "name": "JNJ",
+    "displayName": "Johnson & Johnson",
+    "type": "company",
+    "company": "Johnson & Johnson",
+    "aliases": []
+  }
+]

@@ -19,10 +19,17 @@ import { formatSourceDate } from "@/lib/source-utils";
 export default function TargetDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params.id as Id<"watchTargets">;
+  const id = params.id as string;
   const target = useQuery(api.watchTargets.get, { id });
-  const sourceLinks = useQuery(api.rawItems.listByWatchTarget, { watchTargetId: id, limit: 80 });
-  const signalReports = useQuery(api.digestRuns.listSignalReportsForTarget, { watchTargetId: id, limit: 20 });
+  const validWatchTargetId = target !== undefined && target !== null ? target._id : null;
+  const sourceLinks = useQuery(
+    api.rawItems.listByWatchTarget,
+    validWatchTargetId ? { watchTargetId: validWatchTargetId, limit: 80 } : "skip"
+  );
+  const signalReports = useQuery(
+    api.digestRuns.listSignalReportsForTarget,
+    validWatchTargetId ? { watchTargetId: validWatchTargetId, limit: 20 } : "skip"
+  );
   const updateTarget = useMutation(api.watchTargets.update);
   const removeTarget = useMutation(api.watchTargets.remove);
   const [scanning, setScanning] = useState(false);
@@ -94,7 +101,7 @@ export default function TargetDetailPage() {
     e.preventDefault();
     const aliases = aliasesStr.split(",").map((s) => s.trim()).filter(Boolean);
     await updateTarget({
-      id,
+      id: target._id,
       name: name.trim(),
       displayName: displayName.trim(),
       type,
@@ -142,7 +149,7 @@ export default function TargetDetailPage() {
                   credentials: "include",
                   body: JSON.stringify({
                     period: "daily",
-                    targetIds: [id],
+                    targetIds: [target._id],
                     sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
                   }),
                 });
@@ -206,7 +213,7 @@ export default function TargetDetailPage() {
                   credentials: "include",
                   body: JSON.stringify({
                     period: "daily",
-                    targetIds: [id],
+                    targetIds: [target._id],
                     mode: "comprehensive",
                     sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
                   }),
@@ -421,7 +428,7 @@ export default function TargetDetailPage() {
         <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "0.75rem 0 0", gap: "0.5rem" }}>
           <li>
             <Link
-              href={`/targets/${id}/timeline`}
+              href={`/targets/${target._id}/timeline`}
               className="card"
               style={{
                 display: "inline-flex",
@@ -441,7 +448,7 @@ export default function TargetDetailPage() {
           </li>
           <li>
             <Link
-              href={`/targets/${id}/digests`}
+              href={`/targets/${target._id}/digests`}
               className="card"
               style={{
                 display: "inline-flex",
@@ -583,7 +590,7 @@ export default function TargetDetailPage() {
                     {isExpanded && (
                       <ul className="stack" style={{ listStyle: "none", padding: 0, marginTop: "0.75rem", gap: "0.75rem" }}>
                         {items
-                          .filter((d) => d.watchTargetId === id)
+                          .filter((d) => d.watchTargetId === target._id)
                           .map((item) => {
                             const digestItem: DigestItem = {
                               _id: item._id,
@@ -649,7 +656,7 @@ export default function TargetDetailPage() {
           onClick={async () => {
             setDeleting(true);
             try {
-              await removeTarget({ id });
+              await removeTarget({ id: target._id });
               router.push("/targets");
             } finally {
               setDeleting(false);

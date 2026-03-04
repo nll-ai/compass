@@ -24,3 +24,7 @@ pnpm-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+# eval run artifacts (keep .gitkeep)
+eval/edgar/outputs/latest.json
+eval/edgar/outputs/latest.md

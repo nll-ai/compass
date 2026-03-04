@@ -90,18 +90,19 @@ function groupByYearMonth(items: Doc<"rawItems">[]): Map<string, Doc<"rawItems">
 export default function TargetTimelinePage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const id = params.id as Id<"watchTargets">;
+  const id = params.id as string;
   const focusParam = (searchParams.get("focus") ?? "clinical_trials") as FocusValue;
   const focus = FOCUS_OPTIONS.some((o) => o.value === focusParam) ? focusParam : "clinical_trials";
   const sources = getSourcesForFocus(focus);
 
   const target = useQuery(api.watchTargets.get, { id });
-  const items = useQuery(api.rawItems.listByWatchTarget, {
-    watchTargetId: id,
-    limit: 150,
-    sources,
-    excludeHidden: true,
-  });
+  const validWatchTargetId = target !== undefined && target !== null ? target._id : null;
+  const items = useQuery(
+    api.rawItems.listByWatchTarget,
+    validWatchTargetId
+      ? { watchTargetId: validWatchTargetId, limit: 150, sources, excludeHidden: true }
+      : "skip"
+  );
   const feedbackMap = useQuery(
     api.sourceLinkFeedback.getFeedbackMap,
     items ? { rawItemIds: items.map((i) => i._id) } : "skip"
@@ -155,7 +156,7 @@ export default function TargetTimelinePage() {
       <nav className="timeline-breadcrumb">
         <Link href="/targets">Watch Targets</Link>
         <span className="sep">/</span>
-        <Link href={`/targets/${id}`}>{target.displayName}</Link>
+        <Link href={`/targets/${target._id}`}>{target.displayName}</Link>
         <span className="sep">/</span>
         <span style={{ color: "#374151" }}>Timeline</span>
       </nav>
@@ -171,7 +172,7 @@ export default function TargetTimelinePage() {
         {FOCUS_OPTIONS.map((opt) => (
           <Link
             key={opt.value}
-            href={`/targets/${id}/timeline?focus=${opt.value}`}
+            href={`/targets/${target._id}/timeline?focus=${opt.value}`}
             className="focus-pill"
             data-active={focus === opt.value}
             role="tab"
@@ -187,7 +188,7 @@ export default function TargetTimelinePage() {
           <p>
             No {currentFocusLabel.toLowerCase()} events found yet.
           </p>
-          <Link href={`/targets/${id}`}>
+          <Link href={`/targets/${target._id}`}>
             ← Run a scan from {target.displayName}
           </Link>
         </div>

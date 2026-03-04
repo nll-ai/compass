@@ -31,9 +31,11 @@ export const listAll = query({
 });
 
 export const get = query({
-  args: { id: v.id("watchTargets") },
+  args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    const doc = await ctx.db.get(id);
+    const watchTargetId = ctx.db.normalizeId("watchTargets", id);
+    if (watchTargetId === null) return null;
+    const doc = await ctx.db.get(watchTargetId);
     if (!doc) return null;
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId || doc.userId !== userId) return null;

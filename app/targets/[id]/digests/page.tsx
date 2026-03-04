@@ -10,9 +10,12 @@ import { useState } from "react";
 
 export default function TargetDigestsPage() {
   const params = useParams();
-  const id = params.id as Id<"watchTargets">;
+  const id = params.id as string;
   const target = useQuery(api.watchTargets.get, { id });
-  const runs = useQuery(api.digestRuns.listSignalReportsForTarget, { watchTargetId: id, limit: 50 });
+  const runs = useQuery(
+    api.digestRuns.listSignalReportsForTarget,
+    target !== undefined && target !== null ? { watchTargetId: target._id, limit: 50 } : "skip"
+  );
   const removeRun = useMutation(api.digestRuns.remove);
   const [deletingId, setDeletingId] = useState<Id<"digestRuns"> | null>(null);
 
@@ -40,7 +43,7 @@ export default function TargetDigestsPage() {
       <nav className="muted" style={{ fontSize: "0.9rem" }}>
         <Link href="/targets">Watch Targets</Link>
         <span style={{ margin: "0 0.5rem" }}>/</span>
-        <Link href={`/targets/${id}`}>{target.displayName}</Link>
+        <Link href={`/targets/${target._id}`}>{target.displayName}</Link>
         <span style={{ margin: "0 0.5rem" }}>/</span>
         Digest log
       </nav>

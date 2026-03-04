@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { resolveCompanyToSEC } from "@/lib/scan/sources/edgar-agent";
 
 const lookupSchema = z.object({
   name: z.string().describe("Primary search term (e.g. REGN5381, B7-H3)"),
@@ -76,10 +77,15 @@ ${context}
 Extract the watch target fields.`,
     });
 
+    let company = object.company ?? undefined;
+    if (company?.trim()) {
+      const sec = await resolveCompanyToSEC(company.trim());
+      if (sec) company = sec.displayName;
+    }
     const normalized = {
       ...object,
       indication: object.indication ?? undefined,
-      company: object.company ?? undefined,
+      company,
     };
     return NextResponse.json(normalized);
   } catch (e) {
