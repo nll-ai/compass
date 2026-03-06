@@ -8,7 +8,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | Watch targets list; link to `/targets/new` and `/targets/[id]`. |
+| `app/targets/page.tsx` | Watch targets list: **Running scans** section (pending/running runs via `scans.listRunning`), link to `/targets/new` and `/targets/[id]`. |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/targets/[id]/page.tsx` | Target detail: source selector, run scan, edit target, **scan schedule** (collapsible), insights links, source links, signal reports, delete. |
@@ -21,7 +21,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/digestRuns.ts` | `getById` (internal), `get`, `listSignalReportsForTarget`, etc. |
 | `convex/users.ts` | `getUserById` (internal). |
 | `convex/email.ts` | `sendDigestEmail` (internal action, `"use node"`). |
-| `convex/scans.ts` | `getScanRun` (internal), `scheduleScan` (internal), `callScanApi` (internal action). |
+| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (queries); `getScanRun` (internal), `scheduleScan` (internal), `callScanApi` (internal action). |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
 
 ---
@@ -39,7 +39,25 @@ This document specifies implementation-level details: modules, Convex functions,
   Args: `{ id: string }`.  
   Returns: watch target doc or null (auth: must own target).
 
-### 2.2 Scan schedule (per-target only)
+### 2.2 Scans (run visibility and status)
+
+- **scans.listRunning** (query)  
+  Args: none.  
+  Returns: scan runs for the current user's targets with status `pending` or `running`, sorted by `scheduledFor` desc. Used by the Watch Targets page "Running scans" section.
+
+- **scans.listRecent** (query)  
+  Args: `{ limit?: number }`.  
+  Returns: most recent scan runs for the current user's targets (any status).
+
+- **scans.get** (query)  
+  Args: `{ id }, secret?`.  
+  Returns: a single scan run or null (auth: must own targets in run, or valid server secret).
+
+- **scans.getSourceStatuses** (query)  
+  Args: `{ scanRunId }`.  
+  Returns: per-source status rows for that run (auth: must own targets in run).
+
+### 2.3 Scan schedule (per-target only)
 
 - **scanSchedule.getForTarget** (query)  
   Args: `{ watchTargetId }`.  
@@ -53,7 +71,7 @@ This document specifies implementation-level details: modules, Convex functions,
   Args: `{ watchTargetId }`.  
   Deletes the per-target schedule row if present.
 
-### 2.3 Digests and email
+### 2.4 Digests and email
 
 - **digests.createDigestRunWithItemsFromServer** (mutation)  
   Args: secret, scanRunId, period, executiveSummary, counts, items, sourceLinksHash?.  

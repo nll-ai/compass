@@ -37,13 +37,13 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 
 ## Design documents (HLD, LLD, EARS)
 
-When the user asks for changes to the product or implementation, **keep the design documents up to date** in the same changeset (or immediately after):
+**Any change to the product or implementation must be reflected in the design documents** in the same changeset (or immediately after). The docs are the single source of truth; keep them in sync with the code.
 
 - **[docs/HLD.md](docs/HLD.md)** — High-Level Design: system context, major components, data flow, external integrations. Update when architecture or integration points change.
 - **[docs/LLD.md](docs/LLD.md)** — Low-Level Design: modules, Convex functions, API contracts, key data structures. Update when adding/removing modules, endpoints, or Convex API surface.
 - **[docs/EARS.md](docs/EARS.md)** — Requirements in EARS format (Ubiquitous, Event-driven, State-driven, Optional feature, Unwanted behavior). Update when adding, changing, or retiring requirements.
 
-If the user explicitly requests a feature or refactor, ensure the corresponding HLD/LLD/EARS sections are revised so the docs remain the single source of truth for design and requirements.
+When you add a feature, fix a bug that changes behavior, or refactor a module: revise the corresponding HLD/LLD/EARS sections so the docs stay accurate. Do not merge or ship changes that leave the design documents out of date.
 
 ## Conventions
 

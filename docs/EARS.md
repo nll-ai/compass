@@ -34,7 +34,16 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 3. Digest creation and email
+## 3. Scan run visibility
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-SCAN-1 | Ubiquitous | **The system shall** expose a list of currently pending and running scan runs on the Watch Targets page (`/targets`), scoped to the current user's watch targets, showing for each run: status (pending/running), scheduled or started time, target names, and source progress (e.g. X/Y sources). |
+| R-SCAN-2 | Ubiquitous | **The system shall** update the running-scans list reactively (e.g. via Convex subscription) so that when a run completes or fails, the list reflects the change without a full page reload. |
+
+---
+
+## 4. Digest creation and email
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
@@ -48,7 +57,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 4. Event-driven side effects (cross-cutting)
+## 5. Event-driven side effects (cross-cutting)
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
@@ -56,7 +65,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 5. Traceability
+## 6. Traceability
 
 - **HLD:** [docs/HLD.md](HLD.md) — architecture and data flow for these features.
 - **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, and APIs that implement these requirements.

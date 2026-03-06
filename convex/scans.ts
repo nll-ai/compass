@@ -8,6 +8,37 @@ function checkScanSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
 }
 
+/** List scan runs that are pending or running, scoped to the current user's targets. */
+export const listRunning = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const userTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
+    const pending = await ctx.db
+      .query("scanRuns")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+    const running = await ctx.db
+      .query("scanRuns")
+      .withIndex("by_status", (q) => q.eq("status", "running"))
+      .collect();
+    const merged = [...pending, ...running];
+    const filtered = merged.filter(
+      (run) =>
+        run.targetIds &&
+        run.targetIds.length > 0 &&
+        run.targetIds.every((id) => userTargetIdSet.has(id)),
+    );
+    filtered.sort((a, b) => b.scheduledFor - a.scheduledFor);
+    return filtered;
+  },
+});
+
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {

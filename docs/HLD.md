@@ -36,9 +36,10 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 - Frontend receives ID in `onAdded(id)` and navigates to `/targets/${id}`.
 - No new backend flows; only callback contract and client-side navigation.
 
-### 3.2 Per-target scan schedule
+### 3.2 Scan visibility and per-target schedule
 
-- One optional row per target in `watchTargetSchedule`. Cron `checkAndTrigger` evaluates `watchTargetSchedule` rows and, when due, calls `scheduleScan` with a single target ID.
+- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for the current user's targets, via the `scans.listRunning` query. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
+- **Per-target schedule:** One optional row per target in `watchTargetSchedule`. Cron `checkAndTrigger` evaluates `watchTargetSchedule` rows and, when due, calls `scheduleScan` with a single target ID.
 - Schedule configuration lives only on the **individual watch target page** (collapsible “Scan schedule” section). User enters natural language + timezone; frontend calls `/api/schedule/parse` then `scanSchedule.setForTarget` or `removeForTarget`.
 
 ### 3.3 Digest creation and email
@@ -82,6 +83,7 @@ flowchart TB
   subgraph convex [Convex]
     WT[watchTargets]
     WTS[watchTargetSchedule]
+    scanRuns[scanRuns]
     Digests[digests]
     EmailAction[email.sendDigestEmail]
     Cron[checkAndTrigger cron]
@@ -93,6 +95,7 @@ flowchart TB
 
   NewTarget -->|create mutation, onAdded id| TargetDetail
   TargetDetail -->|getForTarget, setForTarget, removeForTarget| WTS
+  TargetsPage -->|listRunning| scanRuns[scanRuns]
   Cron -->|scheduleScan| ScanAPI[POST /api/scan]
   Digests -->|scheduler.runAfter| EmailAction
   EmailAction -->|fetch| Resend

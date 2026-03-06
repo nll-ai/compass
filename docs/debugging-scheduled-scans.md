@@ -61,6 +61,58 @@ To see whether Convex is local or remote: check `CONVEX_DEPLOYMENT` in `.env.loc
 
 ---
 
+## Tracing digest email (production)
+
+When scans run but digest emails don’t arrive (and nothing shows in Resend), the cause is usually in the **production Convex** deployment: missing env or an early exit in `sendDigestEmail`.
+
+### 1. Point the CLI at production
+
+Use **`--prod`** so commands target the production Convex deployment (the one your deployed app uses), not dev or local:
+
+```bash
+# List env var names on prod (values are hidden)
+npx convex env list --prod
+
+# Stream recent logs from prod
+npx convex logs --prod --history 200
+```
+
+You should see `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `APP_URL` in the list if they’re set. If any is missing, set it:
+
+```bash
+npx convex env set RESEND_API_KEY "re_..." --prod
+npx convex env set RESEND_FROM_EMAIL "Compass <onboarding@resend.dev>" --prod
+npx convex env set APP_URL "https://compass-five-silk.vercel.app" --prod
+```
+
+(Use your real Resend key, from address, and app URL.)
+
+### 2. Inspect logs for sendDigestEmail
+
+After a scan that creates a digest, look in prod logs for the **`email:sendDigestEmail`** action. The handler now logs:
+
+| Log message | Meaning |
+|-------------|--------|
+| `sendDigestEmail: started` | Action ran; check for a line soon after. |
+| `sendDigestEmail: RESEND_API_KEY not set, skipping` | Set `RESEND_API_KEY` on the prod deployment (see above). |
+| `sendDigestEmail: digest run not found, skipping` | Digest run was deleted or ID wrong; unlikely if digest was just created. |
+| `sendDigestEmail: no scan run or targetIds, skipping` | Scan run missing or has no targets. |
+| `sendDigestEmail: no target or userId, skipping` | Watch target or userId missing. |
+| `sendDigestEmail: no user or user email, skipping` | User row missing or `users.email` empty (e.g. WorkOS user not synced). |
+| `sendDigestEmail: sending` | About to call Resend; next line is either success or Resend error. |
+| `sendDigestEmail: Resend API error` | Resend returned non-2xx; status and body are in the log. |
+| `sendDigestEmail: sent successfully` | Email was accepted by Resend; check Resend dashboard and inbox. |
+
+### 3. Open the Convex dashboard
+
+```bash
+npx convex dashboard --prod
+```
+
+Then open **Logs** and filter by `sendDigestEmail` or by time around when the digest was created. Use this if you prefer the UI over the CLI.
+
+---
+
 ## Quick reference
 
 1. **Scheduled scan not firing at all** → Convex logs: cron running? Schedule time/timezone correct? `checkAndTrigger` and `callScanApi` present?

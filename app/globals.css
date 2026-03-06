@@ -37,6 +37,10 @@ a {
   padding: 1rem;
 }
 
+.running-scan-list li:last-child {
+  border-bottom: none !important;
+}
+
 .muted {
   color: #6b7280;
 }
