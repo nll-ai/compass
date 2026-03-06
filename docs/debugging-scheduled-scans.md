@@ -115,7 +115,8 @@ Then open **Logs** and filter by `sendDigestEmail` or by time around when the di
 
 ## Quick reference
 
-1. **Scheduled scan not firing at all** → Convex logs: cron running? Schedule time/timezone correct? `checkAndTrigger` and `callScanApi` present?
-2. **callScanApi reports 500** → Next.js logs (dev terminal or Vercel): look for `[POST /api/scan] error:` and the stack.
-3. **callScanApi reports 401** → Align `SCAN_SECRET` between Convex env and Next.js env.
-4. **Connection/refused errors** → Convex (remote) can’t reach `APP_URL`; use a URL Convex’s network can reach (tunnel or deployed app).
+1. **`Could not find public function for 'scans:listRunning'` (or similar)** → Production Convex is out of date. Deploy: `npx convex deploy --prod` (with `CONVEX_DEPLOY_KEY` set), or use the [Vercel build override](../README.md#deploying-to-vercel) so every Vercel deploy runs `npx convex deploy --cmd 'npm run build'`.
+2. **Scheduled scan not firing at all** → Convex logs: cron running? Schedule time/timezone correct? `checkAndTrigger` and `callScanApi` present?
+3. **callScanApi reports 500** → Next.js logs (dev terminal or Vercel): look for `[POST /api/scan] error:` and the stack.
+4. **callScanApi reports 401** → Align `SCAN_SECRET` between Convex env and Next.js env.
+5. **Connection/refused errors** → Convex (remote) can’t reach `APP_URL`; use a URL Convex’s network can reach (tunnel or deployed app).

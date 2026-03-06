@@ -71,13 +71,20 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
 
 ## Deploying to Vercel
 
-1. **Connect the repo**: In [Vercel](https://vercel.com), sign in, click **Add New… → Project**, and import your Compass GitHub repo. Vercel will detect Next.js; leave **Build Command** as `next build` and **Output Directory** as default.
+1. **Connect the repo**: In [Vercel](https://vercel.com), sign in, click **Add New… → Project**, and import your Compass GitHub repo. Vercel will detect Next.js.
 
-2. **Environment variables**: In the Vercel project → **Settings → Environment Variables**, add the following (for **Production**; add for Preview too if you want preview deployments to use Convex production or a separate dev deployment):
+2. **Build command (deploy Convex automatically)**: Override the **Build Command** to:
+   ```text
+   npx convex deploy --cmd 'npm run build'
+   ```
+   This runs Convex deploy first (pushing `convex/` to production), then builds Next.js. That way production Convex and your app stay in sync on every deploy. You must set `CONVEX_DEPLOY_KEY` (next step).
+
+3. **Environment variables**: In the Vercel project → **Settings → Environment Variables**, add the following (for **Production**; add for Preview too if you want preview deployments to use Convex production or a separate dev deployment):
 
    | Variable | Notes |
    |----------|--------|
-   | `NEXT_PUBLIC_CONVEX_URL` | `https://careful-frog-794.convex.cloud` (production Convex) |
+   | `CONVEX_DEPLOY_KEY` | **Required for Convex deploy in build.** [Convex Dashboard](https://dashboard.convex.dev) → your project → **Deployment Settings** (prod) → **General** → **Generate Production Deploy Key**. Paste the key; use **Production** only. |
+   | `NEXT_PUBLIC_CONVEX_URL` | Set automatically by `convex deploy` during build when `CONVEX_DEPLOY_KEY` is present. If you deploy without the build override, set manually to `https://careful-frog-794.convex.cloud`. |
    | `CONVEX_JWT_PRIVATE_KEY` | Same as in `.env.local` (full PEM, including `\n` if you paste multi-line) |
    | `SCAN_SECRET` | Same value as in Convex dashboard env vars (so `/api/scan` can authenticate) |
    | `NEXT_PUBLIC_APP_URL` | Your Vercel URL, e.g. `https://compass-five-silk.vercel.app` |
@@ -87,7 +94,7 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
 
    In WorkOS dashboard, add your Vercel domain to Redirect URIs (e.g. `https://compass-five-silk.vercel.app/callback`, sign-in/sign-out URLs).
 
-3. **Deploy**: Push to your main branch or click **Redeploy** in Vercel. The first build may take a couple of minutes. After deploy, open your Vercel URL and sign in to confirm Convex and auth work.
+4. **Deploy**: Push to your main branch or click **Redeploy** in Vercel. Each build will run `npx convex deploy` then `npm run build`, so production Convex always matches the code in the repo. The first build may take a couple of minutes. After deploy, open your Vercel URL and sign in to confirm Convex and auth work.
 
 ## Authentication
 
