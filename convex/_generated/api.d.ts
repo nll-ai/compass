@@ -14,6 +14,7 @@ import type * as digestGenerate from "../digestGenerate.js";
 import type * as digestItems from "../digestItems.js";
 import type * as digestRuns from "../digestRuns.js";
 import type * as digests from "../digests.js";
+import type * as email from "../email.js";
 import type * as feedbackForScan from "../feedbackForScan.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_digestHelpers from "../lib/digestHelpers.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   digestItems: typeof digestItems;
   digestRuns: typeof digestRuns;
   digests: typeof digests;
+  email: typeof email;
   feedbackForScan: typeof feedbackForScan;
   "lib/auth": typeof lib_auth;
   "lib/digestHelpers": typeof lib_digestHelpers;

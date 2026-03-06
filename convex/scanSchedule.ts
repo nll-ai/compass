@@ -3,19 +3,6 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
-/** Get the current user's scan schedule. */
-export const get = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getUserIdFromIdentity(ctx);
-    if (!userId) return null;
-    return await ctx.db
-      .query("scanSchedule")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-  },
-});
-
 /** Get scan schedule for a single watch target, if any. Caller must own the target. */
 export const getForTarget = query({
   args: { watchTargetId: v.id("watchTargets") },
@@ -74,7 +61,11 @@ export const setForTarget = mutation({
       .first();
     const doc = { ...rest, updatedAt: now };
     if (existing) {
-      await ctx.db.patch(existing._id, doc);
+      await ctx.db.patch(existing._id, {
+        ...doc,
+        lastDailyRunDate: undefined,
+        lastWeeklyRunDate: undefined,
+      });
       return existing._id;
     }
     return await ctx.db.insert("watchTargetSchedule", {
@@ -98,44 +89,6 @@ export const removeForTarget = mutation({
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
       .first();
     if (row) await ctx.db.delete(row._id);
-  },
-});
-
-/** Set current user's global scan schedule. */
-export const set = mutation({
-  args: {
-    timezone: v.string(),
-    dailyEnabled: v.boolean(),
-    dailyHour: v.number(),
-    dailyMinute: v.number(),
-    weeklyEnabled: v.boolean(),
-    weeklyDayOfWeek: v.number(),
-    weeklyHour: v.number(),
-    weeklyMinute: v.number(),
-    weekdaysOnly: v.optional(v.boolean()),
-    rawDescription: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getOrCreateUserId(ctx);
-    const now = Date.now();
-    const existing = await ctx.db
-      .query("scanSchedule")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-    const doc = {
-      ...args,
-      userId,
-      updatedAt: now,
-    };
-    if (existing) {
-      await ctx.db.patch(existing._id, doc);
-      return existing._id;
-    }
-    return await ctx.db.insert("scanSchedule", {
-      ...doc,
-      lastDailyRunDate: undefined,
-      lastWeeklyRunDate: undefined,
-    });
   },
 });
 
@@ -173,61 +126,17 @@ function mondayOfWeek(dateKey: string): string {
   return `${date.getFullYear()}-${mm}-${dd}`;
 }
 
-/** Check if we should run daily/weekly and trigger scan (per-user and per-target). Runs every 15 min from cron. */
+/** Check if we should run daily/weekly and trigger scan (per-target only). Runs every minute from cron; triggers at the exact scheduled minute. */
 export const checkAndTrigger = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const globalSchedules = await ctx.db.query("scanSchedule").collect();
-
-    // --- Per-user global schedule: scan all targets for that user ---
-    for (const globalSchedule of globalSchedules) {
-      const userId = globalSchedule.userId;
-      if (!userId) continue;
-      const userTargets = await ctx.db
-        .query("watchTargets")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
-        .collect();
-      const targetIds = userTargets.map((t) => t._id);
-      if (targetIds.length === 0) continue;
-
-      const tz = globalSchedule.timezone || "UTC";
-      const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
-      const nowSlot = hour * 60 + minute;
-      const dailySlot = globalSchedule.dailyHour * 60 + globalSchedule.dailyMinute;
-      const weeklySlot = globalSchedule.weeklyHour * 60 + globalSchedule.weeklyMinute;
-
-      if (globalSchedule.dailyEnabled && Math.abs(nowSlot - dailySlot) < 20) {
-        const skipWeekdays = globalSchedule.weekdaysOnly && (weekday === 0 || weekday === 6);
-        if (!skipWeekdays && globalSchedule.lastDailyRunDate !== dateKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
-            period: "daily",
-            targetIds,
-          });
-          await ctx.db.patch(globalSchedule._id, { lastDailyRunDate: dateKey, updatedAt: Date.now() });
-        }
-      }
-      if (globalSchedule.weeklyEnabled && globalSchedule.weeklyDayOfWeek === weekday && Math.abs(nowSlot - weeklySlot) < 20) {
-        const weekKey = mondayOfWeek(dateKey);
-        if (globalSchedule.lastWeeklyRunDate !== weekKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
-            period: "weekly",
-            targetIds,
-          });
-          await ctx.db.patch(globalSchedule._id, { lastWeeklyRunDate: weekKey, updatedAt: Date.now() });
-        }
-      }
-    }
-
     // --- Per-target schedules: scan only that target ---
     const targetSchedules = await ctx.db.query("watchTargetSchedule").collect();
     for (const row of targetSchedules) {
       const tz = row.timezone || "UTC";
       const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
-      const nowSlot = hour * 60 + minute;
-      const dailySlot = row.dailyHour * 60 + row.dailyMinute;
-      const weeklySlot = row.weeklyHour * 60 + row.weeklyMinute;
 
-      if (row.dailyEnabled && Math.abs(nowSlot - dailySlot) < 20) {
+      if (row.dailyEnabled && hour === row.dailyHour && minute === row.dailyMinute) {
         const skipWeekdays = row.weekdaysOnly && (weekday === 0 || weekday === 6);
         if (!skipWeekdays && row.lastDailyRunDate !== dateKey) {
           await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
@@ -237,7 +146,7 @@ export const checkAndTrigger = internalMutation({
           await ctx.db.patch(row._id, { lastDailyRunDate: dateKey, updatedAt: Date.now() });
         }
       }
-      if (row.weeklyEnabled && row.weeklyDayOfWeek === weekday && Math.abs(nowSlot - weeklySlot) < 20) {
+      if (row.weeklyEnabled && row.weeklyDayOfWeek === weekday && hour === row.weeklyHour && minute === row.weeklyMinute) {
         const weekKey = mondayOfWeek(dateKey);
         if (row.lastWeeklyRunDate !== weekKey) {
           await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {

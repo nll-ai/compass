@@ -211,26 +211,6 @@ export default defineSchema({
     fetchedAt: v.number(),
   }).index("by_url", ["url"]),
 
-  /** User-configured scan schedule for all targets (one row per user). */
-  scanSchedule: defineTable({
-    userId: v.optional(v.id("users")),
-    timezone: v.string(),
-    dailyEnabled: v.boolean(),
-    dailyHour: v.number(),
-    dailyMinute: v.number(),
-    weeklyEnabled: v.boolean(),
-    weeklyDayOfWeek: v.number(),
-    weeklyHour: v.number(),
-    weeklyMinute: v.number(),
-    weekdaysOnly: v.optional(v.boolean()),
-    rawDescription: v.optional(v.string()),
-    lastDailyRunDate: v.optional(v.string()),
-    lastWeeklyRunDate: v.optional(v.string()),
-    updatedAt: v.number(),
-  })
-    .index("by_userId", ["userId"])
-    .index("by_updatedAt", ["updatedAt"]),
-
   /** Thumbs up/down on source links (raw items). Thumbs down = hide from timeline. */
   sourceLinkFeedback: defineTable({
     rawItemId: v.id("rawItems"),
