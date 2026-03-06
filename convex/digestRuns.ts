@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
 
@@ -52,6 +52,12 @@ export const get = query({
     if (!scanRun.targetIds.every((tid) => userSet.has(tid))) return null;
     return run;
   },
+});
+
+/** Internal: get digest run by id (no auth). Used by email action. */
+export const getById = internalQuery({
+  args: { id: v.id("digestRuns") },
+  handler: async (ctx, { id }) => ctx.db.get(id),
 });
 
 /** Find an existing Signal Report (digest run) by hash of its source links; used to avoid duplicate reports. */

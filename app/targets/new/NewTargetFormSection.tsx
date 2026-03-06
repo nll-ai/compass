@@ -9,7 +9,7 @@ export function NewTargetFormSection() {
 
   return (
     <>
-      <AddTargetForm onAdded={() => router.push("/targets")} />
+      <AddTargetForm onAdded={(id) => router.push(`/targets/${id}`)} />
       <Link href="/targets" className="muted" style={{ fontSize: "0.9rem" }}>
         ← Back to Watch Targets
       </Link>

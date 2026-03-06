@@ -281,6 +281,9 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, scanRunId, totalFound, newFound, failedSources: Object.keys(failedSources).length ? failedSources : undefined });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    // Log server-side so you can see the real error in: local = npm run dev terminal; remote = Vercel/hosting function logs
+    console.error("[POST /api/scan] error:", message, stack ?? "");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

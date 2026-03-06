@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { TargetLookupResult } from "@/lib/types";
 
 const primaryButton = {
@@ -16,7 +17,7 @@ const primaryButton = {
 };
 
 type Props = {
-  onAdded?: () => void;
+  onAdded?: (targetId: Id<"watchTargets">) => void;
   showContinueToSlack?: boolean;
   onContinueToSlack?: () => void;
   hasTargets?: boolean;
@@ -82,7 +83,7 @@ export function AddTargetForm({
   const handleAddTarget = async (e: React.FormEvent) => {
     e.preventDefault();
     const aliases = aliasesStr.split(",").map((s) => s.trim()).filter(Boolean);
-    await createTarget({
+    const id = await createTarget({
       name: name.trim() || displayName.trim(),
       displayName: displayName.trim() || name.trim(),
       type,
@@ -102,7 +103,7 @@ export function AddTargetForm({
     setIndication("");
     setCompany("");
     setNotes("");
-    onAdded?.();
+    onAdded?.(id);
   };
 
   const handleLookupAnother = () => {

@@ -35,6 +35,16 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 - `lib/scan/sources/` — source agent implementations
 - `docs/` — documentation including the style guide
 
+## Design documents (HLD, LLD, EARS)
+
+When the user asks for changes to the product or implementation, **keep the design documents up to date** in the same changeset (or immediately after):
+
+- **[docs/HLD.md](docs/HLD.md)** — High-Level Design: system context, major components, data flow, external integrations. Update when architecture or integration points change.
+- **[docs/LLD.md](docs/LLD.md)** — Low-Level Design: modules, Convex functions, API contracts, key data structures. Update when adding/removing modules, endpoints, or Convex API surface.
+- **[docs/EARS.md](docs/EARS.md)** — Requirements in EARS format (Ubiquitous, Event-driven, State-driven, Optional feature, Unwanted behavior). Update when adding, changing, or retiring requirements.
+
+If the user explicitly requests a feature or refactor, ensure the corresponding HLD/LLD/EARS sections are revised so the docs remain the single source of truth for design and requirements.
+
 ## Conventions
 
 - TypeScript strict mode. No `any` except for Convex metadata fields.
@@ -43,3 +53,7 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 - All hooks must be called unconditionally (React Rules of Hooks). Never place `useQuery`/`useState` after conditional returns.
 - CSS lives in `app/globals.css`. No CSS modules, no Tailwind, no CSS-in-JS.
 - Inline styles are acceptable for one-off layout tweaks (gap, alignment). Colors and repeated patterns must use CSS classes.
+
+### Event-driven side effects
+
+Prefer event-driven design for side effects. When a meaningful domain event occurs (e.g. digest created, scan completed), trigger downstream work (email, notifications, Slack posts) via `ctx.scheduler.runAfter(0, internal.xxx)` from the mutation that produces the event. Do not inline the side effect in the same mutation or API handler. This keeps write paths fast, decouples producers from consumers, and makes the system easier to extend with new side effects later. Example: digest creation schedules `internal.email.sendDigestEmail` via the Convex scheduler.

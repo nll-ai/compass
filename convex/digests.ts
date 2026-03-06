@@ -76,6 +76,7 @@ export const createDigestRunWithItemsFromServer = mutation({
         sources: item.sources,
       });
     }
+    await ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId });
     return digestRunId;
   },
 });
@@ -131,6 +132,7 @@ export const createDigestRunWithItems = internalMutation({
         sources: item.sources,
       });
     }
+    await ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId });
     return digestRunId;
   },
 });

@@ -15,6 +15,7 @@ import type { DigestItem } from "@/lib/types";
 import { ALL_SOURCE_IDS, getSourceLabel, type SourceId } from "@/lib/sources/registry";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { formatSourceDate } from "@/lib/source-utils";
+import { formatSchedule, COMMON_TIMEZONES } from "@/lib/formatSchedule";
 
 export default function TargetDetailPage() {
   const params = useParams();
@@ -63,6 +64,19 @@ export default function TargetDetailPage() {
     sourceLinks?.length ? { rawItemIds: sourceLinks.map((r) => r._id) } : "skip"
   );
   const setSourceLinkFeedback = useMutation(api.sourceLinkFeedback.setFeedback);
+
+  const targetSchedule = useQuery(
+    api.scanSchedule.getForTarget,
+    validWatchTargetId ? { watchTargetId: validWatchTargetId } : "skip"
+  );
+  const setTargetSchedule = useMutation(api.scanSchedule.setForTarget);
+  const removeTargetSchedule = useMutation(api.scanSchedule.removeForTarget);
+
+  const [scheduleDescription, setScheduleDescription] = useState("");
+  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleCollapsed, setScheduleCollapsed] = useState(true);
 
   useEffect(() => {
     if (target) {
@@ -115,6 +129,45 @@ export default function TargetDetailPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  async function handleSaveSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!target) return;
+    const text = scheduleDescription.trim();
+    if (!text) {
+      setScheduleError("Enter a schedule in plain language (e.g. “Every day at 9am”).");
+      return;
+    }
+    setScheduleError(null);
+    setSavingSchedule(true);
+    try {
+      const res = await fetch("/api/schedule/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: text, timezone: scheduleTimezone }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to parse schedule");
+      await setTargetSchedule({
+        watchTargetId: target._id,
+        timezone: data.timezone ?? scheduleTimezone,
+        dailyEnabled: data.dailyEnabled ?? false,
+        dailyHour: data.dailyHour ?? 9,
+        dailyMinute: data.dailyMinute ?? 0,
+        weeklyEnabled: data.weeklyEnabled ?? false,
+        weeklyDayOfWeek: data.weeklyDayOfWeek ?? 1,
+        weeklyHour: data.weeklyHour ?? 9,
+        weeklyMinute: data.weeklyMinute ?? 0,
+        weekdaysOnly: data.weekdaysOnly,
+        rawDescription: data.rawDescription ?? text,
+      });
+      setScheduleDescription("");
+    } catch (err) {
+      setScheduleError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
 
   return (
     <div className="stack">
@@ -417,6 +470,89 @@ export default function TargetDetailPage() {
           {saved ? "Saved" : "Save changes"}
         </button>
       </form>
+        )}
+      </section>
+
+      <section className="card stack">
+        <button
+          type="button"
+          onClick={() => setScheduleCollapsed((c) => !c)}
+          aria-expanded={!scheduleCollapsed}
+          aria-label={scheduleCollapsed ? "Expand scan schedule" : "Collapse scan schedule"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            padding: 0,
+            border: "none",
+            background: "none",
+            cursor: "pointer",
+            fontSize: "1rem",
+            fontWeight: 600,
+            textAlign: "left",
+          }}
+        >
+          Scan schedule
+          <span aria-hidden style={{ transform: scheduleCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s" }}>
+            ▾
+          </span>
+        </button>
+        {!scheduleCollapsed && (
+          <div className="stack" style={{ marginTop: "1rem", gap: "0.75rem" }}>
+            <p className="muted" style={{ margin: 0 }}>
+              When to run automatic scans for this watch target. We check every minute; we trigger when it’s time. Scheduled scans use the regular scan, not comprehensive search.
+            </p>
+            {targetSchedule === undefined ? (
+              <p className="muted" style={{ margin: 0 }}>Loading…</p>
+            ) : targetSchedule === null ? (
+              <p className="muted" style={{ margin: 0 }}>No schedule set.</p>
+            ) : (
+              <p style={{ margin: 0 }}>
+                <strong>Current:</strong> {formatSchedule(targetSchedule)}
+                <button
+                  type="button"
+                  onClick={() => removeTargetSchedule({ watchTargetId: target._id })}
+                  className="card muted"
+                  style={{ marginLeft: "0.5rem", padding: "0.25rem 0.5rem", fontSize: "0.9rem" }}
+                >
+                  Remove
+                </button>
+              </p>
+            )}
+            <form onSubmit={handleSaveSchedule} style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "flex-end" }}>
+              <label style={{ flex: "1 1 200px", minWidth: 0 }}>
+                <span className="muted" style={{ display: "block", marginBottom: "0.25rem" }}>
+                  Schedule (e.g. “Every day at 9am”, “Weekdays at 8:30”)
+                </span>
+                <input
+                  type="text"
+                  value={scheduleDescription}
+                  onChange={(e) => setScheduleDescription(e.target.value)}
+                  placeholder="Every day at 9am"
+                  className="card"
+                  style={{ width: "100%", padding: "0.5rem" }}
+                />
+              </label>
+              <label>
+                <span className="muted" style={{ display: "block", marginBottom: "0.25rem" }}>Timezone</span>
+                <select
+                  value={scheduleTimezone}
+                  onChange={(e) => setScheduleTimezone(e.target.value)}
+                  className="card"
+                  style={{ padding: "0.5rem" }}
+                >
+                  {COMMON_TIMEZONES.map((tz) => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit" disabled={savingSchedule} className="card" style={{ padding: "0.5rem 1rem" }}>
+                {savingSchedule ? "Saving…" : "Save"}
+              </button>
+            </form>
+            {scheduleError && <p style={{ margin: 0, color: "var(--error, #b91c1c)" }}>{scheduleError}</p>}
+          </div>
         )}
       </section>
 
