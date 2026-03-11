@@ -11,6 +11,7 @@ import { SignalOverlay } from "@/components/compass/SignalOverlay";
 import { SourceBadge } from "@/components/compass/SourceBadge";
 import { SourceLinkOverlay } from "@/components/compass/SourceLinkOverlay";
 import { SourceSelector } from "@/components/compass/SourceSelector";
+import { ScanButton } from "@/components/compass/ScanButton";
 import type { DigestItem } from "@/lib/types";
 import { ALL_SOURCE_IDS, getSourceLabel, type SourceId } from "@/lib/sources/registry";
 import type { Doc } from "@/convex/_generated/dataModel";
@@ -36,7 +37,6 @@ export default function TargetDetailPage() {
   const [scanning, setScanning] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [scanningComprehensive, setScanningComprehensive] = useState(false);
   const [formCollapsed, setFormCollapsed] = useState(true);
   const [overlayItem, setOverlayItem] = useState<DigestItem | null>(null);
   const [sourceLinkOverlay, setSourceLinkOverlay] = useState<Doc<"rawItems"> | null>(null);
@@ -191,79 +191,13 @@ export default function TargetDetailPage() {
           <SourceSelector
             selected={selectedSourceIds}
             onChange={setSelectedSourceIds}
-            disabled={scanning || scanningComprehensive}
+            disabled={scanning}
           />
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-          <button
-            type="button"
-            disabled={scanning}
-            onClick={async () => {
+          <ScanButton
+            onScan={async () => {
               setScanning(true);
-              setScanMessage(null);
-              try {
-                const res = await fetch("/api/scan", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify({
-                    period: "daily",
-                    targetIds: [target._id],
-                    sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
-                  }),
-                });
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && typeof data.totalFound === "number") {
-                  const newCount = typeof data.newFound === "number" ? data.newFound : 0;
-                  const failed = data.failedSources as Record<string, string> | undefined;
-                  let msg =
-                    newCount > 0
-                      ? `Scan finished. ${data.totalFound} items found, ${newCount} new. Digest updated.`
-                      : `Scan finished. ${data.totalFound} items found, 0 new (no digest).`;
-                  if (failed && Object.keys(failed).length > 0) {
-                    const parts = Object.entries(failed).map(([src, err]) => `${getSourceLabel(src as SourceId)}: ${err}`);
-                    msg += " " + parts.join(" ");
-                  }
-                  setScanMessage(msg);
-                  setTimeout(() => setScanMessage(null), 15000);
-                }
-              } finally {
-                setScanning(false);
-              }
-            }}
-          style={{
-            padding: "0.5rem 1rem",
-            borderRadius: 8,
-            border: "none",
-            background: scanning ? "#6b7280" : "#111827",
-            color: "white",
-            fontWeight: 600,
-            cursor: scanning ? "wait" : "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-          }}
-        >
-          {scanning && (
-            <span
-              style={{
-                width: 14,
-                height: 14,
-                border: "2px solid rgba(255,255,255,0.3)",
-                borderTopColor: "white",
-                borderRadius: "50%",
-                animation: "scan-spin 0.7s linear infinite",
-              }}
-              aria-hidden
-            />
-          )}
-          {scanning ? "Scanning…" : "Run scan"}
-        </button>
-        <button
-          type="button"
-          disabled={scanningComprehensive}
-            onClick={async () => {
-              setScanningComprehensive(true);
               setScanMessage(null);
               try {
                 const res = await fetch("/api/scan", {
@@ -293,46 +227,19 @@ export default function TargetDetailPage() {
                   setTimeout(() => setScanMessage(null), 15000);
                 }
               } finally {
-                setScanningComprehensive(false);
+                setScanning(false);
               }
             }}
-          style={{
-            padding: "0.5rem 1rem",
-            borderRadius: 8,
-            border: "1px solid #374151",
-            background: scanningComprehensive ? "#6b7280" : "transparent",
-            color: "#374151",
-            fontWeight: 600,
-            cursor: scanningComprehensive ? "wait" : "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-          }}
-          title="May take 1–2 minutes"
-        >
-          {scanningComprehensive && (
-            <span
-              style={{
-                width: 14,
-                height: 14,
-                border: "2px solid rgba(55,65,81,0.3)",
-                borderTopColor: "#374151",
-                borderRadius: "50%",
-                animation: "scan-spin 0.7s linear infinite",
-              }}
-              aria-hidden
-            />
+            isScanning={scanning}
+          />
+          <Link href="/dashboard" className="muted" style={{ fontSize: "0.9rem" }}>
+            View recent scans on Dashboard →
+          </Link>
+          {scanMessage && (
+            <p className="muted" style={{ margin: 0, fontSize: "0.875rem" }}>
+              {scanMessage}
+            </p>
           )}
-          {scanningComprehensive ? "Running…" : "Run comprehensive search"}
-        </button>
-        <Link href="/dashboard" className="muted" style={{ fontSize: "0.9rem" }}>
-          View recent scans on Dashboard →
-        </Link>
-        {scanMessage && (
-          <p className="muted" style={{ margin: 0, fontSize: "0.875rem" }}>
-            {scanMessage}
-          </p>
-        )}
         </div>
       </div>
 

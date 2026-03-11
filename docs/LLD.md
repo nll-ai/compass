@@ -14,6 +14,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `app/targets/[id]/page.tsx` | Target detail: source selector, run scan, edit target, **scan schedule** (collapsible), insights links, source links, signal reports, delete. |
 | `app/settings/page.tsx` | Settings: Slack integration and source config (no scan schedule). |
 | `components/compass/AddTargetForm.tsx` | Lookup + form; calls `watchTargets.create`, then `onAdded?.(id)` with returned ID. |
+| `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
 | `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by target detail page for per-target schedule. |
 | `convex/watchTargets.ts` | `create` (returns `Id<"watchTargets">`), `get`, `update`, `remove`, `getByIdsInternal`. |
 | `convex/scanSchedule.ts` | `getForTarget`, `listPerTargetSchedules`, `setForTarget`, `removeForTarget`, `checkAndTrigger` (cron). |
