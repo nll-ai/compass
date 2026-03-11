@@ -108,7 +108,10 @@ This document specifies implementation-level details: modules, Convex functions,
 ### 4.2 POST /api/scan
 
 - Used by Convex `callScanApi` and by manual "Run scan" from UI.  
-- Body may include `scanRunId`, `period`, `targetIds`, `mode` (latest | comprehensive), `sources`.  
+- **Request body:** `scanRunId?`, `period` ("daily" | "weekly"), `targetIds?`, `mode?` ("latest" | "comprehensive"), `sources?`.
+  - `mode`: Defaults to "latest" if unspecified; UI-initiated scans always send "comprehensive" per R-SCAN-UI-2.
+  - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
+- **Deduplication:** The endpoint fetches `existingExternalIdsBySource` before running sources and filters duplicates during `upsertRawItemsFromServer`, so only new items are stored and counted in `newFound`.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
 
 ### 4.3 POST /api/targets/lookup

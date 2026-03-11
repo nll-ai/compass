@@ -230,6 +230,8 @@ export default function DashboardPage() {
                       mode: "comprehensive",
                       sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
                     }),
+                    // mode: "comprehensive" is intentional per R-SCAN-UI-2: always run deep scan
+                    // sources: undefined means "use all sources" (see route.ts:74-78)
                   });
                   const text = await res.text();
                   let data: { ok?: boolean; error?: string; totalFound?: number; newFound?: number };

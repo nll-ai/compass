@@ -17,11 +17,20 @@ export function ScanButton({
   const fontSize = size === "compact" ? "0.9rem" : undefined;
   const spinnerSize = size === "compact" ? 12 : 14;
 
+  const handleClick = async () => {
+    try {
+      await onScan();
+    } catch (error) {
+      console.error("ScanButton: onScan threw an error:", error);
+      throw error;
+    }
+  };
+
   return (
     <button
       type="button"
       disabled={disabled || isScanning}
-      onClick={onScan}
+      onClick={handleClick}
       style={{
         padding,
         borderRadius: 8,
