@@ -65,7 +65,24 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 6. Traceability
+## 6. Researcher/Faculty as Watch Target Type
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-PERSON-1 | Ubiquitous | **The system shall** accept `"person"` as a valid value for the `type` field on watch targets. |
+| R-PERSON-2 | Ubiquitous | **The system shall** allow users to select "Researcher" as a watch target type when creating a new target. |
+| R-PERSON-2.1 | Ubiquitous | **The system shall** identify and classify researcher/faculty names in the target lookup API, returning `type: "person"` when the query appears to be a person's name. |
+| R-PERSON-3 | Optional feature | **If** the watch target type is `"person"`, **the system shall** display an optional "Affiliation" field on the create form. |
+| R-PERSON-4 | Ubiquitous | **The system shall** persist the affiliation field on the watch target document. |
+| R-PERSON-5 | State-driven | **Where** a watch target has type `"person"`, **the system shall** display a "Researcher" badge on the target detail page. |
+| R-PERSON-6 | State-driven | **Where** a watch target has type `"person"` and an affiliation is set, **the system shall** display the affiliation on the target detail page below the name. |
+| R-PERSON-7 | Ubiquitous | **The system shall** scan person-type targets using the same pipeline as other target types, searching for the target name across configured data sources. |
+| R-PERSON-8 | Ubiquitous | **The system shall** include person-type targets in scheduled scans, manual scans, and digests identically to other target types. |
+| R-PERSON-9 | Unwanted behavior | **The system shall not** require any migration or modification of existing watch targets when adding the person type. |
+
+---
+
+## 7. Traceability
 
 - **HLD:** [docs/HLD.md](HLD.md) — architecture and data flow for these features.
 - **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, and APIs that implement these requirements.

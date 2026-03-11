@@ -40,10 +40,11 @@ export function AddTargetForm({
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [aliasesStr, setAliasesStr] = useState("");
-  const [type, setType] = useState<"drug" | "target" | "company">("drug");
+  const [type, setType] = useState<"drug" | "target" | "company" | "person">("drug");
   const [therapeuticArea, setTherapeuticArea] = useState<"cardiovascular" | "oncology" | "other">("cardiovascular");
   const [indication, setIndication] = useState("");
   const [company, setCompany] = useState("");
+  const [affiliation, setAffiliation] = useState("");
   const [notes, setNotes] = useState("");
 
   const handleLookup = async (e: React.FormEvent) => {
@@ -73,6 +74,7 @@ export function AddTargetForm({
       setTherapeuticArea(result.therapeuticArea);
       setIndication(result.indication ?? "");
       setCompany(result.company ?? "");
+      setAffiliation(result.affiliation ?? "");
       setLookupStatus("done");
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : "Request failed");
@@ -91,6 +93,7 @@ export function AddTargetForm({
       aliases,
       indication: indication.trim() || undefined,
       company: company.trim() || undefined,
+      affiliation: affiliation.trim() || undefined,
       notes: notes.trim() || undefined,
       active: true,
     });
@@ -102,6 +105,7 @@ export function AddTargetForm({
     setAliasesStr("");
     setIndication("");
     setCompany("");
+    setAffiliation("");
     setNotes("");
     onAdded?.(id);
   };
@@ -116,6 +120,7 @@ export function AddTargetForm({
     setAliasesStr("");
     setIndication("");
     setCompany("");
+    setAffiliation("");
     setNotes("");
   };
 
@@ -195,13 +200,14 @@ export function AddTargetForm({
               <span className="muted" style={{ fontSize: "0.85rem" }}>Type</span>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as "drug" | "target" | "company")}
+                onChange={(e) => setType(e.target.value as "drug" | "target" | "company" | "person")}
                 className="card"
                 style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
               >
                 <option value="drug">Drug</option>
                 <option value="target">Target</option>
                 <option value="company">Company</option>
+                <option value="person">Researcher</option>
               </select>
             </label>
             <label>
@@ -237,6 +243,19 @@ export function AddTargetForm({
                 style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
               />
             </label>
+            {type === "person" && (
+              <label>
+                <span className="muted" style={{ fontSize: "0.85rem" }}>Affiliation (optional)</span>
+                <input
+                  type="text"
+                  value={affiliation}
+                  onChange={(e) => setAffiliation(e.target.value)}
+                  placeholder="e.g. Stanford University"
+                  className="card"
+                  style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
+                />
+              </label>
+            )}
             <label>
               <span className="muted" style={{ fontSize: "0.85rem" }}>What are you looking to monitor? (optional)</span>
               <textarea

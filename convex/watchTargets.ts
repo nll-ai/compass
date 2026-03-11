@@ -102,7 +102,7 @@ export const listActiveForServer = query({
 const watchTargetValidator = {
   name: v.string(),
   displayName: v.string(),
-  type: v.union(v.literal("drug"), v.literal("target"), v.literal("company")),
+  type: v.union(v.literal("drug"), v.literal("target"), v.literal("company"), v.literal("person")),
   aliases: v.array(v.string()),
   indication: v.optional(v.string()),
   company: v.optional(v.string()),
@@ -112,6 +112,7 @@ const watchTargetValidator = {
     v.literal("other"),
   ),
   active: v.boolean(),
+  affiliation: v.optional(v.string()),
   notes: v.optional(v.string()),
 };
 

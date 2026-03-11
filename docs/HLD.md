@@ -6,7 +6,7 @@ This document describes the high-level architecture of Compass: major components
 
 ## 1. System context
 
-Compass is a competitive intelligence monitoring app for biotech teams. Users define watch targets (drugs, targets, companies), run scans across public data sources, and consume synthesized digests. The system comprises:
+Compass is a competitive intelligence monitoring app for biotech teams. Users define watch targets (drugs, targets, companies, researchers/faculty), run scans across public data sources, and consume synthesized digests. The system comprises:
 
 - **Web app (Next.js App Router):** Dashboard, watch target management, settings, digest/timeline views, chat.
 - **Backend (Convex):** Auth, persistence, queries/mutations, scheduled jobs (cron), and server-side actions (e.g. HTTP outbound).
@@ -15,7 +15,22 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 ---
 
-## 2. Major components
+## 2. Watch target types
+
+Compass supports four types of watch targets:
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Drug** | Pharmaceutical compounds, molecules | "Semaglutide", "REGN5381" |
+| **Target** | Biological targets (proteins, pathways) | "NPR1", "B7-H3" |
+| **Company** | Biotech/pharma companies | "Regeneron", "Moderna" |
+| **Person** | Researchers, faculty, KOLs | "Jennifer Doudna" |
+
+Person-type targets are scanned for publications and news mentioning the researcher's name. They include an optional `affiliation` field for institutional context (e.g., "Stanford University").
+
+---
+
+## 3. Major components
 
 | Component | Responsibility |
 |-----------|----------------|
@@ -27,7 +42,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 ---
 
-## 3. Data flow (relevant to recent features)
+## 4. Data flow (relevant to recent features)
 
 ### 3.1 Add watch target and redirect
 
@@ -50,7 +65,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 ---
 
-## 4. External integrations
+## 5. External integrations
 
 | Integration | Purpose | Direction |
 |-------------|---------|-----------|
@@ -61,7 +76,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 ---
 
-## 5. Non-functional and cross-cutting
+## 6. Non-functional and cross-cutting
 
 - **Event-driven side effects:** Domain events (e.g. digest created) trigger downstream work via Convex scheduler or internal actions, not inline in the same mutation or API handler. See AGENTS.md § Event-driven side effects.
 - **Auth and scoping:** Convex queries/mutations that expose user data use `getUserIdFromIdentity` or `getOrCreateUserId`; internal queries/actions used by crons or email have no user context and resolve ownership via stored IDs (e.g. `watchTargets.userId` → `users.email`).
@@ -69,7 +84,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 ---
 
-## 6. Diagram (overview)
+## 7. Diagram (overview)
 
 ```mermaid
 flowchart TB

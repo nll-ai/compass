@@ -31,9 +31,10 @@ This document specifies implementation-level details: modules, Convex functions,
 ### 2.1 Watch targets
 
 - **watchTargets.create** (mutation)  
-  Args: name, displayName, type, therapeuticArea, aliases, indication?, company?, notes?, active.  
+  Args: name, displayName, type (`"drug"` | `"target"` | `"company"` | `"person"`), therapeuticArea, aliases, indication?, company?, affiliation?, notes?, active.  
   Returns: `Id<"watchTargets">`.  
-  Creates row with `userId` from `getOrCreateUserId`.
+  Creates row with `userId` from `getOrCreateUserId`.  
+  The `affiliation` field is optional and used for person-type targets to store institutional affiliation (e.g., "Stanford University").
 
 - **watchTargets.get** (query)  
   Args: `{ id: string }`.  
@@ -105,25 +106,41 @@ This document specifies implementation-level details: modules, Convex functions,
 
 ### 4.2 POST /api/scan
 
-- Used by Convex `callScanApi` and by manual “Run scan” from UI.  
+- Used by Convex `callScanApi` and by manual "Run scan" from UI.  
 - Body may include `scanRunId`, `period`, `targetIds`, `mode` (latest | comprehensive), `sources`.  
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
+
+### 4.3 POST /api/targets/lookup
+
+- **Request:** `{ query: string }`.
+- **Response (200):** `{ name, displayName, aliases, type, therapeuticArea, indication?, company?, affiliation? }`.
+  - `type` is one of: `"drug"`, `"target"`, `"company"`, `"person"`.
+  - `affiliation` is optional and populated for person-type targets (e.g., "Stanford University").
+- **Errors:** 500 with `{ error }` if lookup fails or schema validation fails.
+- Uses Exa search + GPT-4o to extract structured target information from web results.
 
 ---
 
 ## 5. Key data structures
 
-### 5.1 watchTargetSchedule (Convex table)
+### 5.1 watchTargets (Convex table)
+
+- `userId`, `name`, `displayName`, `type` (`"drug"` | `"target"` | `"company"` | `"person"`), `aliases`, `therapeuticArea`, `indication?`, `company?`, `affiliation?`, `active`, `notes?`, `learnedQueryTerms?`, `excludeQueryTerms?`, `learnedTermsUpdatedAt?`, `createdAt`, `updatedAt`.
+- The `type` field supports four values: `"drug"` (pharmaceutical compounds), `"target"` (biological targets), `"company"` (biotech/pharma companies), and `"person"` (researchers/faculty).
+- The `affiliation` field is optional and used for person-type targets to store institutional affiliation (e.g., "Stanford University").
+- Indexes: `by_userId`, `by_active`, `by_therapeutic_area`.
+
+### 5.2 watchTargetSchedule (Convex table)
 
 - `watchTargetId`, `timezone`, `dailyEnabled`, `dailyHour`, `dailyMinute`, `weeklyEnabled`, `weeklyDayOfWeek`, `weeklyHour`, `weeklyMinute`, `weekdaysOnly?`, `rawDescription?`, `lastDailyRunDate?`, `lastWeeklyRunDate?`, `updatedAt`.
 - Index: `by_watchTarget` on `watchTargetId`.
 
-### 5.2 formatSchedule (lib/formatSchedule.ts)
+### 5.3 formatSchedule (lib/formatSchedule.ts)
 
 - **Input:** Object with timezone, daily* and weekly* booleans/numbers, weekdaysOnly?, rawDescription?.
 - **Output:** Human-readable string, e.g. `"Daily at 9:00. (America/New_York)"` or `"No automatic scans scheduled."`.
 
-### 5.3 AddTargetForm callback
+### 5.4 AddTargetForm callback
 
 - **Props:** `onAdded?: (targetId: Id<"watchTargets">) => void`.
 - **Invocation:** After successful `createTarget(...)`, component calls `onAdded?.(id)` with the returned id.

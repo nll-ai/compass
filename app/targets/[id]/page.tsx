@@ -47,10 +47,11 @@ export default function TargetDetailPage() {
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [aliasesStr, setAliasesStr] = useState("");
-  const [type, setType] = useState<"drug" | "target" | "company">("drug");
+  const [type, setType] = useState<"drug" | "target" | "company" | "person">("drug");
   const [therapeuticArea, setTherapeuticArea] = useState<"cardiovascular" | "oncology" | "other">("cardiovascular");
   const [indication, setIndication] = useState("");
   const [company, setCompany] = useState("");
+  const [affiliation, setAffiliation] = useState("");
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -87,6 +88,7 @@ export default function TargetDetailPage() {
       setTherapeuticArea(target.therapeuticArea);
       setIndication(target.indication ?? "");
       setCompany(target.company ?? "");
+      setAffiliation(target.affiliation ?? "");
       setNotes(target.notes ?? "");
       setActive(target.active);
     }
@@ -123,6 +125,7 @@ export default function TargetDetailPage() {
       aliases,
       indication: indication.trim() || undefined,
       company: company.trim() || undefined,
+      affiliation: affiliation.trim() || undefined,
       notes: notes.trim() || undefined,
       active,
     });
@@ -179,6 +182,9 @@ export default function TargetDetailPage() {
         {target.displayName}
       </nav>
       <h1 style={{ margin: 0 }}>{target.displayName}</h1>
+      {target.type === "person" && target.affiliation && (
+        <p className="muted" style={{ margin: 0 }}>{target.affiliation}</p>
+      )}
 
       <div className="stack" style={{ gap: "0.75rem" }}>
         <div className="card stack" style={{ padding: "0.75rem 1rem" }}>
@@ -389,13 +395,14 @@ export default function TargetDetailPage() {
           <span className="muted" style={{ fontSize: "0.85rem" }}>Type</span>
           <select
             value={type}
-            onChange={(e) => setType(e.target.value as "drug" | "target" | "company")}
+            onChange={(e) => setType(e.target.value as "drug" | "target" | "company" | "person")}
             className="card"
             style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
           >
             <option value="drug">Drug</option>
             <option value="target">Target</option>
             <option value="company">Company</option>
+            <option value="person">Researcher</option>
           </select>
         </label>
         <label>
@@ -431,6 +438,19 @@ export default function TargetDetailPage() {
             style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
           />
         </label>
+        {type === "person" && (
+          <label>
+            <span className="muted" style={{ fontSize: "0.85rem" }}>Affiliation</span>
+            <input
+              type="text"
+              value={affiliation}
+              onChange={(e) => setAffiliation(e.target.value)}
+              placeholder="e.g. Stanford University"
+              className="card"
+              style={{ display: "block", width: "100%", marginTop: "0.25rem", padding: "0.5rem" }}
+            />
+          </label>
+        )}
         <label>
           <span className="muted" style={{ fontSize: "0.85rem" }}>What are you looking to monitor?</span>
           <textarea

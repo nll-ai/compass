@@ -14,17 +14,18 @@ export type TargetLookupResult = {
   name: string;
   displayName: string;
   aliases: string[];
-  type: "drug" | "target" | "company";
+  type: "drug" | "target" | "company" | "person";
   therapeuticArea: TherapeuticArea;
   indication?: string;
   company?: string;
+  affiliation?: string;
 };
 
 export type WatchTarget = {
   _id: string;
   name: string;
   displayName: string;
-  type: "drug" | "target" | "company";
+  type: "drug" | "target" | "company" | "person";
   aliases: string[];
   indication?: string;
   company?: string;

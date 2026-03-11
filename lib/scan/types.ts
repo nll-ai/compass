@@ -18,7 +18,7 @@ export interface ScanTarget {
   displayName: string;
   aliases: string[];
   therapeuticArea?: TherapeuticArea;
-  type?: "drug" | "target" | "company";
+  type?: "drug" | "target" | "company" | "person";
   indication?: string;
   company?: string;
   /** What the user wants to monitor for this target (guides retrieval and relevance). */
