@@ -43,6 +43,18 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
+## 3.5 Scan initiation UI
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-SCAN-UI-1 | Ubiquitous | **The system shall** present a single "Run scan" button for initiating scans from the dashboard and target detail pages. |
+| R-SCAN-UI-2 | Ubiquitous | **The system shall** always run a comprehensive (deep) scan that searches all available time ranges. |
+| R-SCAN-UI-3 | Ubiquitous | **The system shall** deduplicate scan results against previously collected items, so digests only include new (delta) findings. |
+| R-SCAN-UI-4 | State-driven | **Where** a scan is in progress, **the system shall** disable the scan button and show "Scanning…" with a spinner. |
+| R-SCAN-UI-5 | Unwanted behavior | **The system shall not** present multiple scan buttons or scan mode options to the user. |
+
+---
+
 ## 4. Digest creation and email
 
 | ID | Pattern | Requirement |

@@ -8,22 +8,19 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { DigestSummaryCard } from "@/components/compass/DigestSummaryCard";
 import { DataSourcesSection } from "@/components/compass/DataSourcesSection";
 import { SourceSelector } from "@/components/compass/SourceSelector";
+import { ScanButton } from "@/components/compass/ScanButton";
 import { formatDate } from "@/lib/formatters";
 import { ALL_SOURCE_IDS, type SourceId } from "@/lib/sources/registry";
 
 function DashboardTargetRow({
   target,
   isScanning,
-  isScanningComprehensive,
-  onRunScan,
-  onRunComprehensiveScan,
+  onScan,
   setScanError,
 }: {
   target: { _id: Id<"watchTargets">; displayName: string };
   isScanning: boolean;
-  isScanningComprehensive: boolean;
-  onRunScan: () => Promise<void>;
-  onRunComprehensiveScan: () => Promise<void>;
+  onScan: () => Promise<void>;
   setScanError: (msg: string | null) => void;
 }) {
   const latestDigest = useQuery(api.digestRuns.getLatestForTarget, { watchTargetId: target._id });
@@ -47,79 +44,14 @@ function DashboardTargetRow({
             {target.displayName}
           </Link>
           <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              disabled={isScanning}
-              onClick={async () => {
+            <ScanButton
+              onScan={async () => {
                 setScanError(null);
-                await onRunScan();
+                await onScan();
               }}
-              style={{
-                padding: "0.4rem 0.75rem",
-                borderRadius: 8,
-                border: "none",
-                background: isScanning ? "#6b7280" : "#111827",
-                color: "white",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                cursor: isScanning ? "wait" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-              }}
-            >
-              {isScanning && (
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    border: "2px solid rgba(255,255,255,0.3)",
-                    borderTopColor: "white",
-                    borderRadius: "50%",
-                    animation: "scan-spin 0.7s linear infinite",
-                  }}
-                  aria-hidden
-                />
-              )}
-              {isScanning ? "Scanning…" : "Run scan"}
-            </button>
-            <button
-              type="button"
-              disabled={isScanningComprehensive}
-              onClick={async () => {
-                setScanError(null);
-                await onRunComprehensiveScan();
-              }}
-              style={{
-                padding: "0.4rem 0.75rem",
-                borderRadius: 8,
-                border: "1px solid #374151",
-                background: isScanningComprehensive ? "#6b7280" : "transparent",
-                color: "#374151",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                cursor: isScanningComprehensive ? "wait" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-              }}
-              title="May take 1–2 minutes"
-            >
-              {isScanningComprehensive && (
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    border: "2px solid rgba(55,65,81,0.3)",
-                    borderTopColor: "#374151",
-                    borderRadius: "50%",
-                    animation: "scan-spin 0.7s linear infinite",
-                  }}
-                  aria-hidden
-                />
-              )}
-              {isScanningComprehensive ? "Running…" : "Run comprehensive search"}
-            </button>
+              isScanning={isScanning}
+              size="compact"
+            />
           </div>
         </div>
         {latestDigest === undefined ? (
@@ -164,11 +96,10 @@ export default function DashboardPage() {
   const latestDigests = useQuery(api.digestRuns.listRecent, { limit: 1 });
   const recentScans = useQuery(api.scans.listRecent, { limit: 7 });
   const [scanningIds, setScanningIds] = useState<Set<Id<"watchTargets">>>(new Set());
-  const [scanningComprehensiveIds, setScanningComprehensiveIds] = useState<Set<Id<"watchTargets">>>(new Set());
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<SourceId[]>(() => [...ALL_SOURCE_IDS]);
-  const scanning = scanningIds.size > 0 || scanningComprehensiveIds.size > 0;
+  const scanning = scanningIds.size > 0;
 
   const isLoading = targets === undefined;
   const hasTargets = Array.isArray(targets) && targets.length > 0;
@@ -241,7 +172,7 @@ export default function DashboardPage() {
               aria-hidden
             />
             <strong>
-              Scanning…{(scanningIds.size + scanningComprehensiveIds.size) > 1 ? ` ${scanningIds.size + scanningComprehensiveIds.size} watch targets` : ""}
+              Scanning…{scanningIds.size > 1 ? ` ${scanningIds.size} watch targets` : ""}
             </strong>
             <span className="muted">This may take a minute.</span>
           </span>
@@ -263,7 +194,7 @@ export default function DashboardPage() {
       <section className="card stack">
         <h2 style={{ margin: 0 }}>Scan options</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Choose which sources to run. Run scan or comprehensive search below will use only the selected sources (useful to test a single source).
+          Choose which sources to include in scans.
         </p>
         <SourceSelector
           selected={selectedSourceIds}
@@ -283,9 +214,8 @@ export default function DashboardPage() {
               key={target._id}
               target={target}
               isScanning={scanningIds.has(target._id)}
-              isScanningComprehensive={scanningComprehensiveIds.has(target._id)}
               setScanError={setScanError}
-              onRunScan={async () => {
+              onScan={async () => {
                 setScanError(null);
                 setScanSuccess(null);
                 setScanningIds((prev) => new Set(prev).add(target._id));
@@ -297,6 +227,7 @@ export default function DashboardPage() {
                     body: JSON.stringify({
                       period: "daily",
                       targetIds: [target._id],
+                      mode: "comprehensive",
                       sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
                     }),
                   });
@@ -332,60 +263,6 @@ export default function DashboardPage() {
                   console.error("Scan request failed:", e);
                 } finally {
                   setScanningIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(target._id);
-                    return next;
-                  });
-                }
-              }}
-              onRunComprehensiveScan={async () => {
-                setScanError(null);
-                setScanSuccess(null);
-                setScanningComprehensiveIds((prev) => new Set(prev).add(target._id));
-                try {
-                  const res = await fetch("/api/scan", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({
-                      period: "daily",
-                      targetIds: [target._id],
-                      mode: "comprehensive",
-                      sources: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
-                    }),
-                  });
-                  const text = await res.text();
-                  let data: { ok?: boolean; error?: string; totalFound?: number; newFound?: number };
-                  try {
-                    data = text ? (JSON.parse(text) as typeof data) : {};
-                  } catch {
-                    data = { error: text.startsWith("<") ? "Unexpected response (redirect?)" : text };
-                  }
-                  if (!res.ok || data.error) {
-                    const msg =
-                      data.error ??
-                      res.statusText ??
-                      `HTTP ${res.status}`;
-                    const displayMsg = msg.includes("Unauthorized")
-                      ? "Convex rejected the scan secret. Set SCAN_SECRET in Convex to match .env.local: run npx convex env set SCAN_SECRET \"your-secret\" (use the same value as in .env.local)."
-                      : msg;
-                    setScanError(displayMsg);
-                    console.error("Comprehensive scan failed:", res.status, msg, text.slice(0, 200));
-                  } else if (data.ok && typeof data.totalFound === "number") {
-                    const n = typeof data.newFound === "number" ? data.newFound : 0;
-                    setScanSuccess(
-                      n > 0
-                        ? `Scan finished. ${data.totalFound} items found, ${n} new. Digest updated.`
-                        : `Scan finished. ${data.totalFound} items found.`
-                    );
-                    setTimeout(() => setScanSuccess(null), 8000);
-                  }
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  setScanError(msg);
-                  console.error("Comprehensive scan request failed:", e);
-                } finally {
-                  setScanningComprehensiveIds((prev) => {
                     const next = new Set(prev);
                     next.delete(target._id);
                     return next;
