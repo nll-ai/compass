@@ -28,7 +28,7 @@ export default function TargetsPage() {
   return (
     <div className="stack">
       <h1>Watch Targets</h1>
-      <p className="muted">Programs and biological targets you're monitoring.</p>
+      <p className="muted">Drugs, biological targets, companies, and people you're monitoring.</p>
 
       {runningScans !== undefined && runningScans.length > 0 && (
         <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Running scans">
