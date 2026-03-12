@@ -1,7 +1,7 @@
 import type { ScanTarget, SourceResult, ScanOptions } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry } from "../fetchWithRetry";
-import { runEdgarAgent } from "./edgar-agent";
+import { runEdgarAgent, enrichEdgarItemsWithSummaries } from "./edgar-agent";
 
 const SEC_USER_AGENT_DEFAULT = "Compass competitive intelligence app (contact via GitHub)";
 function getSECUserAgent(): string {
@@ -160,7 +160,16 @@ export async function runEdgar(context: SourceAgentContext): Promise<SourceResul
     }
 
     // Fallback: when agent returns nothing (and no error), use procedural company-list path.
-    const proceduralItems = await runEdgarProcedural(context, options);
+    let proceduralItems = await runEdgarProcedural(context, options);
+    // Enrich with content-based, target-tailored summaries so timeline/overlay show real summaries.
+    if (proceduralItems.length > 0 && env.OPENAI_API_KEY) {
+      proceduralItems = await enrichEdgarItemsWithSummaries(
+        proceduralItems,
+        targets,
+        env,
+        { maxItems: 15 }
+      );
+    }
     return { items: proceduralItems };
   } catch (err) {
     return { items: [], error: err instanceof Error ? err.message : String(err) };

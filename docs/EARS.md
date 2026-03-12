@@ -69,6 +69,15 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
+## 4.5 Source link and timeline summaries
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-SRC-1 | Ubiquitous | **The system shall** produce substantive, content-based summaries for raw items (e.g. SEC filings) when the scan pipeline can fetch content and run summarization, so the timeline and source-link overlay show what the item discloses rather than only the title or a generic form/date line. |
+| R-SRC-2 | Ubiquitous | **The system shall** use full watch-target context (name, type, company, notes) when summarizing SEC filings, so summaries are relevant to the target being monitored (e.g. person-type targets get filings summarized in terms of the company’s pipeline and disclosures, not only literal name mentions). |
+
+---
+
 ## 5. Event-driven side effects (cross-cutting)
 
 | ID | Pattern | Requirement |

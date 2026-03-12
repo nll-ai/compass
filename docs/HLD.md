@@ -63,6 +63,10 @@ Person-type targets are scanned for publications and news mentioning the researc
 - Both creation paths, after persisting the digest run and items, schedule an internal action: `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
 - **sendDigestEmail** (Convex action, `"use node"`): Loads digest run → scan run → first target → user; reads `user.email`; if `RESEND_API_KEY` is set, POSTs to Resend API to send one email with summary and link to target’s digest page. No DB writes; best-effort delivery.
 
+### 3.4 Raw-item summaries (timeline and overlay)
+
+- Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD § 4.2 (POST /api/scan) and EARS § 4.5.
+
 ---
 
 ## 5. External integrations

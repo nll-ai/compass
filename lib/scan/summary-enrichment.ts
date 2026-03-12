@@ -20,13 +20,17 @@ function snippetFor(item: RawItemInput): string {
 /**
  * For items missing abstract, call LLM to produce one sentence per item (batched).
  * Returns a new array with abstract filled in where we generated one.
+ * SEC/edgar items are excluded: they get content-based summaries from the EDGAR agent
+ * or enrichEdgarItemsWithSummaries; we do not fill with generic title-inferred text.
  */
 export async function enrichMissingSummaries(
   items: RawItemInput[],
   source: string,
   openaiKey: string | undefined
 ): Promise<RawItemInput[]> {
-  const needEnrichment = items.filter((i) => !(i.abstract ?? "").trim());
+  const needEnrichment = items.filter(
+    (i) => !(i.abstract ?? "").trim() && source !== "edgar"
+  );
   if (needEnrichment.length === 0 || !openaiKey) return items;
 
   const summariesByEnrichmentIndex = new Map<number, string>();
@@ -39,6 +43,7 @@ export async function enrichMissingSummaries(
   let enrichmentIndex = 0;
   return items.map((item) => {
     if ((item.abstract ?? "").trim()) return item;
+    if (source === "edgar") return item;
     const summary = summariesByEnrichmentIndex.get(enrichmentIndex);
     enrichmentIndex++;
     if (!summary) return item;

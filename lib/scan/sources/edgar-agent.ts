@@ -95,26 +95,53 @@ Reply with the single company name or null.`,
   }
 }
 
-/** Use LLM to extract 1–3 sentences about the watch target(s) from an SEC filing excerpt. */
+/** Context about a watch target, used to produce richer filing summaries. */
+interface SummarizeTargetContext {
+  name: string;
+  displayName?: string;
+  type?: string;
+  company?: string;
+  notes?: string;
+  aliases?: string[];
+}
+
+/**
+ * Summarize an SEC filing excerpt in the context of one or more watch targets.
+ * The filing was already matched to the targets by the search step, so relevance
+ * is assumed. The summary should always highlight key business/pipeline disclosures
+ * from the filing, framed around why a user monitoring these targets would care.
+ */
 async function summarizeFilingForTargets(
   filingExcerpt: string,
   form: string,
   fileDate: string,
-  targetNames: string[],
+  targetContexts: SummarizeTargetContext[],
   openaiKey: string | undefined
 ): Promise<string> {
-  if (!openaiKey || !filingExcerpt.trim() || targetNames.length === 0) return "";
-  const targetList = targetNames.slice(0, 5).join(", ");
+  if (!openaiKey || !filingExcerpt.trim() || targetContexts.length === 0) return "";
+  const targetBlock = targetContexts
+    .slice(0, 5)
+    .map((t) => {
+      const parts = [`name: ${t.name}`];
+      if (t.displayName && t.displayName !== t.name) parts.push(`display: ${t.displayName}`);
+      if (t.type) parts.push(`type: ${t.type}`);
+      if (t.company) parts.push(`company: ${t.company}`);
+      if (t.aliases?.length) parts.push(`aliases: ${t.aliases.join(", ")}`);
+      if (t.notes) parts.push(`monitoring notes: ${t.notes.slice(0, 200)}`);
+      return `- ${parts.join("; ")}`;
+    })
+    .join("\n");
   const { text } = await generateText({
     model: openai("gpt-4o-mini"),
-    prompt: `You are an analyst summarizing SEC filings for competitive intelligence. Below is an excerpt from a ${form} filed ${fileDate}.
+    prompt: `You are an analyst summarizing SEC filings for competitive intelligence. Below is an excerpt from a ${form} filed ${fileDate}. This filing was found while monitoring the watch targets below—the search already determined relevance, so do not re-evaluate whether the filing is relevant.
 
-Watch targets of interest: ${targetList}
+Watch targets being monitored:
+${targetBlock}
 
 Excerpt:
 ${filingExcerpt.slice(0, 14_000)}
 
-Task: In 1–3 sentences, state what this filing discloses about any of the watch targets (e.g. trial status, discontinuation, pipeline, material events). If there is no relevant disclosure about these targets, reply with exactly: "No specific disclosure about the watch targets in this excerpt." Keep the response concise and factual.`,
+Task: In 2–4 sentences, summarize the most important business, pipeline, clinical, regulatory, or financial disclosures from this filing that would matter to someone tracking the watch targets above. Be concrete: cite program names, trial phases, financial figures, dates, or partnership details when present. Frame the summary around what a competitive intelligence analyst would highlight. Never respond with a generic description like "Annual 10-K report for X filed on date" or "No specific disclosure."`,
   });
   return (text ?? "").trim();
 }
@@ -381,6 +408,77 @@ export async function runEdgarAgent(
   return { items, error };
 }
 
+/** Options for enriching SEC items with content-based, target-tailored summaries. */
+export interface EnrichEdgarItemsOptions {
+  /** Max number of items to fetch and summarize (SEC rate limits). Default 15. */
+  maxItems?: number;
+  /** Delay in ms between fetches. Default 1200. */
+  delayMs?: number;
+}
+
+/**
+ * Fetch SEC filing content and generate a target-tailored summary for each item.
+ * Used by the procedural EDGAR path so timeline/overlay show content-based summaries
+ * instead of title-only. Respects SEC rate limits via delay between fetches.
+ */
+export async function enrichEdgarItemsWithSummaries(
+  items: RawItemInput[],
+  targets: ScanTarget[],
+  env: { OPENAI_API_KEY?: string },
+  options: EnrichEdgarItemsOptions = {}
+): Promise<RawItemInput[]> {
+  const openaiKey = env.OPENAI_API_KEY;
+  if (!openaiKey || items.length === 0) return items;
+  const maxItems = options.maxItems ?? 15;
+  const delayMs = options.delayMs ?? SEC_FETCH_DELAY_MS;
+  const toProcess = items.slice(0, maxItems);
+  const results = [...items];
+  const abstractByIndex = new Map<number, string>();
+
+  for (let i = 0; i < toProcess.length; i++) {
+    await sleep(delayMs);
+    const item = toProcess[i];
+    const target = targets.find((t) => t._id === item.watchTargetId);
+    const targetContexts: SummarizeTargetContext[] = target
+      ? [{
+          name: target.name,
+          displayName: target.displayName,
+          type: target.type,
+          company: target.company,
+          notes: target.notes,
+          aliases: target.aliases,
+        }]
+      : [];
+    if (targetContexts.length === 0) continue;
+    const form = (item.metadata?.form as string) || "10-K";
+    const fileDate = item.publishedAt
+      ? new Date(item.publishedAt).toISOString().slice(0, 10)
+      : "";
+    try {
+      const text = await fetchFilingText(item.url);
+      if (!text) continue;
+      const summary = await summarizeFilingForTargets(
+        text,
+        form,
+        fileDate,
+        targetContexts,
+        openaiKey
+      );
+      if (summary) {
+        abstractByIndex.set(i, summary);
+      }
+    } catch {
+      // Skip this item on fetch/summary failure
+    }
+  }
+
+  return results.map((item, idx) => {
+    const abstract = idx < toProcess.length ? abstractByIndex.get(idx) : undefined;
+    if (!abstract) return item;
+    return { ...item, abstract };
+  });
+}
+
 /**
  * Run the SEC search subagent: LLM with tools that can call full-text search and company lookup,
  * with query expansion. Returns collected SEC filings as RawItemInput[].
@@ -522,7 +620,14 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     ? sortedHits.filter((h) => !existingExternalIds.has(h.adsh))
     : sortedHits;
   const toSummarize = notYetStored.slice(0, MAX_FILINGS_TO_SUMMARIZE);
-  const targetNames = targets.map((t) => t.name).filter(Boolean);
+  const targetContexts: SummarizeTargetContext[] = targets.map((t) => ({
+    name: t.name,
+    displayName: t.displayName,
+    type: t.type,
+    company: t.company,
+    notes: t.notes,
+    aliases: t.aliases,
+  }));
 
   for (let i = 0; i < toSummarize.length; i += SUMMARIZE_PARALLEL) {
     const chunk = toSummarize.slice(i, i + SUMMARIZE_PARALLEL);
@@ -536,10 +641,10 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
             text,
             hit.form,
             hit.fileDate ?? "",
-            targetNames,
+            targetContexts,
             openaiKey
           );
-          if (summary && !summary.toLowerCase().includes("no specific disclosure")) {
+          if (summary) {
             adshToAbstract.set(hit.adsh, summary);
           }
         } catch {

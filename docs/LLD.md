@@ -113,6 +113,7 @@ This document specifies implementation-level details: modules, Convex functions,
   - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
 - **Deduplication:** The endpoint fetches `existingExternalIdsBySource` before running sources and filters duplicates during `upsertRawItemsFromServer`, so only new items are stored and counted in `newFound`.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
+- **SEC EDGAR:** Agent path fetches filing content and summarizes for watch targets; procedural fallback uses `enrichEdgarItemsWithSummaries` (lib/scan/sources/edgar-agent) to fetch filing text and produce summaries for up to 15 items. Summaries are substantive (2–4 sentences on business/pipeline/clinical/regulatory disclosures), use full target context (name, displayName, type, company, notes, aliases) so person/company/drug targets all get relevant framing, and every successfully summarized filing gets an abstract (no filtering of "no specific disclosure"). Timeline and overlay show these content-based summaries when present.
 
 ### 4.3 POST /api/targets/lookup
 
