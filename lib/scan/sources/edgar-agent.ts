@@ -446,7 +446,7 @@ export async function enrichEdgarItemsWithSummaries(
           type: target.type,
           company: target.company,
           notes: target.notes,
-          aliases: target.aliases,
+          aliases: target.aliases ?? [],
         }]
       : [];
     if (targetContexts.length === 0) continue;
@@ -473,7 +473,7 @@ export async function enrichEdgarItemsWithSummaries(
   }
 
   return results.map((item, idx) => {
-    const abstract = idx < toProcess.length ? abstractByIndex.get(idx) : undefined;
+    const abstract = idx < maxItems ? abstractByIndex.get(idx) : undefined;
     if (!abstract) return item;
     return { ...item, abstract };
   });
@@ -626,7 +626,7 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     type: t.type,
     company: t.company,
     notes: t.notes,
-    aliases: t.aliases,
+    aliases: t.aliases ?? [],
   }));
 
   for (let i = 0; i < toSummarize.length; i += SUMMARIZE_PARALLEL) {
@@ -644,7 +644,7 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
             targetContexts,
             openaiKey
           );
-          if (summary) {
+          if (summary && summary.length > 20 && !summary.toLowerCase().includes("no specific disclosure")) {
             adshToAbstract.set(hit.adsh, summary);
           }
         } catch {

@@ -43,7 +43,6 @@ export async function enrichMissingSummaries(
   let enrichmentIndex = 0;
   return items.map((item) => {
     if ((item.abstract ?? "").trim()) return item;
-    if (source === "edgar") return item;
     const summary = summariesByEnrichmentIndex.get(enrichmentIndex);
     enrichmentIndex++;
     if (!summary) return item;

@@ -169,6 +169,8 @@ export async function runEdgar(context: SourceAgentContext): Promise<SourceResul
         env,
         { maxItems: 15 }
       );
+    } else if (proceduralItems.length > 0 && !env.OPENAI_API_KEY) {
+      console.warn("[edgar] OPENAI_API_KEY not set: SEC filings will have no abstracts");
     }
     return { items: proceduralItems };
   } catch (err) {
