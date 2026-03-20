@@ -52,8 +52,16 @@ export const getById = internalQuery({
   handler: async (ctx, { id }) => ctx.db.get(id),
 });
 
-/** Find an existing Signal Report (digest run) by hash of its source links; used to avoid duplicate reports. */
-export const getBySourceLinksHash = query({
+function checkScanSecret(secret: string): boolean {
+  return (
+    typeof process.env.SCAN_SECRET === "string" &&
+    process.env.SCAN_SECRET.length > 0 &&
+    secret === process.env.SCAN_SECRET
+  );
+}
+
+/** Internal: dedupe digest creation by source-links hash. */
+export const getBySourceLinksHashInternal = internalQuery({
   args: { sourceLinksHash: v.string() },
   handler: async (ctx, { sourceLinksHash }) => {
     return await ctx.db
@@ -63,7 +71,19 @@ export const getBySourceLinksHash = query({
   },
 });
 
-/** List Signal Reports (digest runs) that include this watch target, newest first. Caller must own the target. */
+/** Server-only: same lookup, gated by `SCAN_SECRET` (POST /api/scan). Not callable without secret. */
+export const getBySourceLinksHashFromServer = query({
+  args: { secret: v.string(), sourceLinksHash: v.string() },
+  handler: async (ctx, { secret, sourceLinksHash }) => {
+    if (!checkScanSecret(secret)) return null;
+    return await ctx.db
+      .query("digestRuns")
+      .withIndex("by_sourceLinksHash", (q) => q.eq("sourceLinksHash", sourceLinksHash))
+      .first();
+  },
+});
+
+/** List Signal Reports (digest runs) that include this watch target, newest first. Caller must own or same-team see the target. */
 export const listSignalReportsForTarget = query({
   args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
   handler: async (ctx, { watchTargetId, limit = 20 }) => {

@@ -5,6 +5,7 @@
 export const SOURCE_REGISTRY = [
   { id: "exa", label: "Exa AI" },
   { id: "pubmed", label: "PubMed" },
+  { id: "biorxiv", label: "bioRxiv" },
   { id: "edgar", label: "SEC EDGAR (10-K, 10-Q, 8-K)" },
   { id: "patents", label: "Patents" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },

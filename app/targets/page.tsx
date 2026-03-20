@@ -2,8 +2,9 @@
 
 import { useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useConvexAuthQuerySkip } from "@/lib/convexAuthQuery";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ScanButton } from "@/components/compass/ScanButton";
 import { formatDate, executiveSummarySnippet } from "@/lib/formatters";
@@ -235,20 +236,50 @@ function TargetListSection({
 }
 
 export default function TargetsPage() {
-  const targets = useQuery(api.watchTargets.listAll);
-  const myTeam = useQuery(api.teams.getMyTeam);
-  const runningScans = useQuery(api.scans.listRunning);
+  const { isLoading: convexAuthLoading, isAuthenticated } = useConvexAuth();
+  const skipQueries = useConvexAuthQuerySkip();
+  const targets = useQuery(api.watchTargets.listAll, skipQueries ? "skip" : {});
+  const myTeam = useQuery(api.teams.getMyTeam, skipQueries ? "skip" : {});
+  const runningScans = useQuery(api.scans.listRunning, skipQueries ? "skip" : {});
   const subscribe = useMutation(api.targetSubscriptions.subscribe);
   const unsubscribe = useMutation(api.targetSubscriptions.unsubscribe);
   const [scanningIds, setScanningIds] = useState<Set<Id<"watchTargets">>>(new Set());
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
 
+  if (convexAuthLoading) {
+    return (
+      <div className="stack">
+        <h1>Watch Targets</h1>
+        <p className="muted" role="status" aria-live="polite">
+          Connecting to your workspace…
+        </p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="stack">
+        <h1>Watch Targets</h1>
+        <section className="card stack" style={{ gap: "0.5rem" }}>
+          <p style={{ margin: 0 }}>Convex couldn’t verify your session.</p>
+          <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+            Refresh the page after signing in. If this persists, confirm <code className="muted">NEXT_PUBLIC_CONVEX_URL</code>{" "}
+            matches your deployment and Convex auth (JWT) is configured for this app.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   if (targets === undefined) {
     return (
       <div className="stack">
         <h1>Watch Targets</h1>
-        <p className="muted">Loading…</p>
+        <p className="muted" role="status" aria-live="polite">
+          Loading watch targets…
+        </p>
       </div>
     );
   }
@@ -267,6 +298,7 @@ export default function TargetsPage() {
   const inDigest = listTargets.filter((t) => t.subscribed);
   const notInDigest = listTargets.filter((t) => !t.subscribed);
   const teamMode = myTeam !== undefined && myTeam !== null;
+  const showSoloTeamHint = myTeam === null;
 
   return (
     <main className="stack" aria-label="Watch targets">
@@ -276,6 +308,21 @@ export default function TargetsPage() {
           ? "Team watch targets. Check “In digest” for targets included in your combined email and global schedule."
           : "Drugs, biological targets, companies, and people you're monitoring."}
       </p>
+      {showSoloTeamHint && (
+        <section
+          className="card stack"
+          style={{ gap: "0.35rem", borderColor: "var(--border, #e5e7eb)" }}
+          aria-label="Team workspace"
+        >
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            You’re not on a team yet. Go to{" "}
+            <Link href="/settings" style={{ color: "var(--link, #2563eb)", fontWeight: 600 }}>
+              Settings
+            </Link>{" "}
+            to create a workspace or accept a team email invite — then you can share watch targets and combined digests with teammates.
+          </p>
+        </section>
+      )}
 
       {scanError && (
         <p style={{ color: "var(--error, #b91c1c)", margin: 0, fontSize: "0.9rem" }} role="alert">{scanError}</p>

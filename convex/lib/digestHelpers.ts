@@ -29,6 +29,7 @@ export function categoryForSource(source: string): "trial_update" | "publication
   const m: Record<string, "trial_update" | "publication" | "regulatory" | "filing" | "news" | "conference"> = {
     edgar: "filing",
     pubmed: "publication",
+    biorxiv: "publication",
     clinicaltrials: "trial_update",
     exa: "news",
     openfda: "regulatory",

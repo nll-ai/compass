@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { userOwnsTarget } from "./lib/auth";
+import { getUserIdFromIdentity, getVisibleWatchTargetIds, userOwnsTarget } from "./lib/auth";
 
 const sourceValidator = v.union(
   v.literal("pubmed"),
+  v.literal("biorxiv"),
   v.literal("clinicaltrials"),
   v.literal("edgar"),
   v.literal("exa"),
@@ -170,7 +171,13 @@ export const listByWatchTarget = query({
 export const getByIds = query({
   args: { ids: v.array(v.id("rawItems")) },
   handler: async (ctx, { ids }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
     const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
-    return results.filter((r) => r != null);
+    return results.filter(
+      (r): r is NonNullable<typeof r> =>
+        r != null && visible.has(r.watchTargetId),
+    );
   },
 });

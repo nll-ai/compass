@@ -33,17 +33,16 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 2. Scan schedule placement and behavior
+## 2. Digest schedule (per user only)
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
-| R-SCH-1 | Ubiquitous | **The system shall** expose per-target scan schedule configuration only on the individual watch target detail page (e.g. `/targets/{id}`), in a dedicated "Scan schedule" section. |
-| R-SCH-3 | Unwanted behavior | **The system shall not** show a "Scan per watch target" section or per-target schedule list on the Settings page. |
-| R-SCH-4 | State-driven | **Where** a watch target has a saved per-target schedule, **the system shall** display the current schedule (e.g. "Daily at 9:00 (America/New_York)") and a control to remove it on that target’s detail page. |
-| R-SCH-5 | State-driven | **Where** a watch target has no per-target schedule, **the system shall** display "No schedule set." and a form to add one (natural-language description and timezone). |
-| R-SCH-6 | Ubiquitous | **The system shall** accept natural-language schedule input (e.g. "Every day at 9am") and timezone, and persist the parsed schedule for the current target via the existing Convex API (`setForTarget` / removeForTarget). |
-| R-SCH-7 | Ubiquitous | **The system shall** use the schedule parsing endpoint (`/api/schedule/parse`) and format/display logic (e.g. `formatSchedule`) for per-target schedule on the target page. |
-| R-SCH-8 | Ubiquitous | **The system shall** expose a **global digest schedule** on the Settings page (`/settings`): natural-language description and timezone, persisted in `userDigestSchedule` via `userDigestSchedule.set` / `remove`, using the same parse endpoint and `formatSchedule` as per-target schedules. |
+| R-SCH-1 | Ubiquitous | **The system shall** expose **automatic** digest timing **only** on the Settings page (`/settings`), persisted per signed-in user in `userDigestSchedule` via `userDigestSchedule.set` / `remove`. |
+| R-SCH-2 | Unwanted behavior | **The system shall not** persist per-watch-target cron schedules, Convex APIs for per-target schedules, or a per-target schedule form on target detail pages. |
+| R-SCH-3 | Ubiquitous | **The system shall** use the schedule parsing endpoint (`POST /api/schedule/parse`) and `formatSchedule` **only** for the Settings digest schedule. |
+| R-SCH-4 | Ubiquitous | **The system shall** on each target detail page link users to Settings for automatic digest timing (combined scans follow the user’s global schedule). |
+| R-SCH-5 | Ubiquitous | **The system shall** run cron `checkAndTrigger` against **`userDigestSchedule` only** (grouped by team + local slot or per-user when no team), scheduling combined `scheduleScan` with `digestNotifyUserIds` as today. |
+| R-SCH-6 | Unwanted behavior | **The system shall not** show a separate “scan per watch target” schedule list on Settings; Settings holds one global digest schedule row per user. |
 
 ---
 
@@ -79,7 +78,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-DIG-5 | Ubiquitous | **The system shall** include in the email a short summary (e.g. executive summary) and a link to the digest view (e.g. `{APP_URL}/targets/{targetId}/digests`). |
 | R-DIG-6 | Unwanted behavior | **The system shall not** block or fail digest creation if the email send fails; email delivery is best-effort. |
 | R-DIG-7 | Ubiquitous | **The system shall** trigger the email send asynchronously (e.g. via Convex scheduler) so that the mutation that creates the digest does not wait on the email. |
-| R-DIG-8 | Ubiquitous | **The system shall** send a **combined digest email** when a scan run covers multiple watch targets: HTML body with executive summary, per-target sections (significance, category, headline, short synthesis), links to `/targets/{id}/digests` and `/targets`. **When** `scanRuns.digestNotifyUserIds` is set, **the system shall** send one message per listed user, filtering digest items to that user’s subscribed targets when the user has a `teamId`. |
+| R-DIG-8 | Ubiquitous | **The system shall** send a **combined digest email** when a scan run covers multiple watch targets: HTML body with executive summary (omitted for team-filtered recipients when they have no matching digest items), per-target sections (significance, category, headline, short synthesis), links to `/targets/{id}/digests` and `/targets` (URLs validated for `href`). **When** `scanRuns.digestNotifyUserIds` is set, **the system shall** send one message per listed user (deduplicated by user id), filtering digest items to that user’s subscribed targets when the user has a `teamId`. |
 
 ---
 
@@ -104,12 +103,20 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
-| R-TEAM-1 | Event-driven | **When** a user signs in and has no `teamId`, **the system shall** assign them to a `teams` row keyed by email domain (create team if needed), via `getOrCreateUserId` / domain logic. |
+| R-TEAM-1 | Ubiquitous | **The system shall not** assign users to teams by email domain on sign-in. **The system shall** set `users.teamId` only when the user **creates a team**, **accepts a valid team invite**, or (one-off migration) via `teams.runTeamBootstrap`. |
+| R-TEAM-8 | Ubiquitous | **The system shall** expose **Team** on Settings (`/settings`): when on a team — display name (team admins: **edit and save** name), members, admin indicator, **Leave team** (with confirmation), and for team admins **invite by email**, list pending email invites (revoke). When not on a team — **pending invitations** (accept) for the signed-in email, **open invite link** (`?teamInvite=`), and **Create team** (name). **The system shall** show a short hint on Watch Targets linking to Settings when the user has no team. |
+| R-TEAM-9 | Event-driven | **When** the user invokes **Leave team**, **the system shall** clear `teamId`, set `teamPreference` to `"solo"`, transfer `teams.ownerUserId` to another member when the leaver was owner and others remain, and remove `targetSubscriptions` for watch targets the user does not own. |
+| R-TEAM-10 | Event-driven | **When** the user invokes **Create team** with a non-empty name and has no `teamId`, **the system shall** insert a `teams` row with `ownerUserId` set to that user and patch the user’s `teamId`. **The system shall not** allow create while the user still has a `teamId` (must leave first). |
+| R-TEAM-11 | Event-driven | **When** a team admin submits a valid email to **invite teammate**, **the system shall** insert a `teamEmailInvites` row (unique token, normalized email, expiry e.g. 7 days), capped per team, reject duplicates already on the team or with a pending invite, and **schedule** `email.sendTeamInviteEmail` (Convex internal action). |
+| R-TEAM-12 | Event-driven | **When** a user with no `teamId` accepts via **invite token** (e.g. from email link to Settings) or **invite id** (from pending list) and the signed-in user’s email matches the invite, **the system shall** set their `teamId`, clear `teamPreference` from `"solo"`, and mark the invite accepted. |
+| R-TEAM-13 | Event-driven | **When** a team admin revokes an invite, **the system shall** mark it revoked so it can no longer be used. |
+| R-TEAM-15 | Optional feature | **If** `RESEND_API_KEY` is set, **the system shall** send the team invite email via Resend with an accept link using `APP_URL` and `?teamInvite=` token; **if** it is not set, **the system shall** still create the invite row (invite may be accepted from Settings pending list when signed in as the invited email). |
+| R-TEAM-14 | Event-driven | **When** a team admin submits a non-empty trimmed name for their current team, **the system shall** update `teams.name` (and `updatedAt`). **The system shall not** allow non-admins to rename the team. |
 | R-TEAM-2 | Ubiquitous | **The system shall** store optional `teamId` on `users` and `watchTargets`, and `createdByUserId` on watch targets for attribution. |
 | R-TEAM-3 | Ubiquitous | **The system shall** expose `targetSubscriptions` (subscribe / unsubscribe / list) so a user can opt into team watch targets for digests and scheduled scans. |
 | R-TEAM-4 | Ubiquitous | **The system shall** list team watch targets on `/targets` with an “In digest” control, sections for subscribed vs other team targets when the user has a team, and optional “Added by {creator}” from `createdByUserId`. |
-| R-TEAM-5 | Ubiquitous | **The system shall** scope visibility of targets, scans, digests, raw items, and per-target schedules to **owned** or **same-team** targets (`userOwnsTarget` / `getVisibleWatchTargetIds`). |
-| R-TEAM-6 | Ubiquitous | **The system shall** run the global digest cron using **subscribed** active targets for team users (and owned active targets when not on a team or without subscriptions); **when** multiple users in the same team share the same local schedule slot, **the system shall** merge into one `scheduleScan` with combined `targetIds` and `digestNotifyUserIds`. |
+| R-TEAM-5 | Ubiquitous | **The system shall** scope visibility of targets, scans, digests, and raw items to **owned** or **same-team** targets (`userOwnsTarget` / `getVisibleWatchTargetIds`). |
+| R-TEAM-6 | Ubiquitous | **The system shall** run the global digest cron using **subscribed** active targets for team users (and owned active targets when not on a team or without subscriptions); **when** multiple users in the same team share the same local schedule slot, **the system shall** merge into one `scheduleScan` with combined `targetIds` and `digestNotifyUserIds`. Users **without** a `teamId` **shall not** be merged with other accounts at the same slot (per-user grouping). |
 | R-TEAM-7 | Optional feature | **If** `MIGRATION_SECRET` is set in Convex env, **the system shall** provide `teams.runTeamBootstrap` (mutation with matching `secret` arg) to backfill teams, `teamId` on users and targets, and owner subscriptions for one-time deploy. |
 
 ---

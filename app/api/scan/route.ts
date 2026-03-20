@@ -260,7 +260,10 @@ export async function POST(request: Request) {
         : undefined;
     const existingReport =
       sourceLinksHash != null
-        ? await client.query(api.digestRuns.getBySourceLinksHash, { sourceLinksHash })
+        ? await client.query(api.digestRuns.getBySourceLinksHashFromServer, {
+            secret: effectiveSecret,
+            sourceLinksHash,
+          })
         : null;
     if (!existingReport) {
       await client.mutation(api.digests.createDigestRunWithItemsFromServer, {

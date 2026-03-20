@@ -38,20 +38,26 @@ export const listAll = query({
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
     const user = await ctx.db.get(userId);
-    let targets: Doc<"watchTargets">[] = [];
+    /**
+     * Union of (1) targets you created (`userId`) and (2) team pool (`teamId` = your current team).
+     * After team membership changes, owned rows may still carry an old or missing `teamId`; listing only
+     * by_teamId would hide them. Aligns with `getVisibleWatchTargetIds` / `userOwnsTarget`.
+     */
+    const owned = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const byId = new Map(owned.map((t) => [t._id, t]));
     if (user?.teamId) {
-      targets = await ctx.db
+      const teamPool = await ctx.db
         .query("watchTargets")
         .withIndex("by_teamId", (q) => q.eq("teamId", user.teamId))
-        .order("desc")
         .collect();
-    } else {
-      targets = await ctx.db
-        .query("watchTargets")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
-        .order("desc")
-        .collect();
+      for (const t of teamPool) {
+        byId.set(t._id, t);
+      }
     }
+    const targets = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
     const subs = await ctx.db
       .query("targetSubscriptions")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -203,7 +209,7 @@ export const update = mutation({
   },
 });
 
-/** Permanently delete a watch target and all associated records (digest items, raw items, per-target schedule). */
+/** Permanently delete a watch target and all associated records (digest items, raw items, subscriptions). */
 export const remove = mutation({
   args: { id: v.id("watchTargets") },
   handler: async (ctx, { id }) => {
@@ -221,12 +227,6 @@ export const remove = mutation({
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
       .collect();
     for (const row of rawItems) await ctx.db.delete(row._id);
-
-    const schedule = await ctx.db
-      .query("watchTargetSchedule")
-      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
-      .first();
-    if (schedule) await ctx.db.delete(schedule._id);
 
     const subs = await ctx.db
       .query("targetSubscriptions")
@@ -272,8 +272,10 @@ export const refreshLearnedTermsForTarget = internalAction({
       return { updated: false, reason: "insufficient_feedback" };
     }
 
-    const target = await ctx.runQuery(api.watchTargets.get, { id: String(watchTargetId) });
-    const displayName = target?.displayName ?? "this target";
+    const targetRows = await ctx.runQuery(internal.watchTargets.getByIdsInternal, {
+      ids: [watchTargetId],
+    });
+    const displayName = targetRows[0]?.displayName ?? "this target";
 
     const goodBlock =
       good.length > 0

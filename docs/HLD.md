@@ -54,20 +54,22 @@ Person-type targets are scanned for publications and news mentioning the researc
 ### 3.2 Scan visibility and schedules
 
 - **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
-- **Global digest schedule (Settings):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` groups due rows by team + local time slot, merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan.
-- **Per-target schedule:** One optional row per target in `watchTargetSchedule`. Cron evaluates these rows and, when due, calls `scheduleScan` with a single target ID (no `digestNotifyUserIds`; email falls back to first target owner).
-- **Per-target UI:** Natural language + timezone on the target detail page → `/api/schedule/parse` → `scanSchedule.setForTarget` / `removeForTarget`.
-- **Settings UI:** Same parse flow for **global** digest schedule → `userDigestSchedule.set` / `remove`.
+- **Digest schedule (Settings only):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` evaluates **only** these rows, groups due users by **team** + local time slot (users without a `teamId` are keyed **per user**, not merged across accounts), merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan. There is **no** per-target automatic schedule table or cron path.
+- **Settings UI:** Natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`.
+- **Target detail:** Explains that automatic timing is configured on Settings; manual “Run scan” remains on the target page.
 
 ### 3.3 Digest creation and email
 
 - Digest is created in one of two ways: (1) from the Next.js scan API after a successful scan with new items (`createDigestRunWithItemsFromServer`), or (2) from a Convex action (`createDigestRunWithItems`).
 - Both creation paths, after persisting the digest run and items, schedule an internal action: `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
-- **sendDigestEmail** (Convex action, `"use node"`): Loads digest run, scan run, all digest items, and target names; if `digestNotifyUserIds` is set, sends one HTML email per user (items filtered by subscription when `user.teamId` is set). Otherwise resolves recipient from the first target’s owner. If `RESEND_API_KEY` is set, POSTs to Resend; best-effort delivery.
+- **sendDigestEmail** (Convex action, `"use node"`): Loads digest run, scan run, all digest items, and target names; if `digestNotifyUserIds` is set, sends one HTML email per user (items filtered by subscription when `user.teamId` is set; team-filtered users with no matching items do not receive the run-wide executive summary). Otherwise resolves recipient from the first target’s owner. If `RESEND_API_KEY` is set, POSTs to Resend; non-OK responses throw so failures surface in Convex logs/retries.
+- **sendTeamInviteEmail** (internal action): After `teams.inviteTeamMemberByEmail`, scheduled with `inviteId`; loads invite context and sends Resend HTML with **Accept** link to `{APP_URL}/settings?teamInvite={token}` when `RESEND_API_KEY` is set; otherwise logs skip (invite still valid for in-app accept).
 
 ### 3.4 Teams and subscriptions
 
-- Users get a `teamId` from email domain (auto-created `teams` row). Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
+- **No domain auto-team:** Sign-in does **not** assign `teamId`. Users join a workspace by **creating a team** (they become `ownerUserId` / admin) or **accepting an invite code** from Settings. Optional `teams.runTeamBootstrap` (with `MIGRATION_SECRET`) can still backfill domain-based teams for legacy data.
+- **Settings → Team:** **Create team**, **Invite teammate by email** (admins; Resend email with accept link when configured), **Rename team** (admins only), **Leave team** (ownership transfers to another member when possible). Pending invites stored in `teamEmailInvites` (token, normalized email, TTL); recipients accept via link (`/settings?teamInvite=`) or **Pending invitations** on Settings when signed in with the invited email.
+- Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
 - Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans.
 
 ### 3.5 Raw-item summaries (timeline and overlay)
@@ -111,7 +113,6 @@ flowchart TB
     Teams[teams]
     Subs[targetSubscriptions]
     UDS[userDigestSchedule]
-    WTS[watchTargetSchedule]
     scanRuns[scanRuns]
     Digests[digests]
     EmailAction[email.sendDigestEmail]
@@ -123,10 +124,11 @@ flowchart TB
   end
 
   NewTarget -->|create mutation, onAdded id| TargetDetail
-  TargetDetail -->|getForTarget, setForTarget, removeForTarget| WTS
+  TargetDetail -->|manual scan, edit target| WT
   Settings -->|get, set, remove| UDS
   TargetsPage -->|listAll, subscribe| WT
-  TargetsPage -->|listRunning| scanRuns[scanRuns]
+  TargetsPage -->|listRunning| scanRuns
+  Cron -->|userDigestSchedule only| UDS
   Cron -->|scheduleScan| ScanAPI[POST /api/scan]
   Digests -->|scheduler.runAfter| EmailAction
   EmailAction -->|fetch| Resend

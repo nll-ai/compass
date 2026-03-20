@@ -74,7 +74,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               </span>
             </div>
           </header>
-          <main className="container">{children}</main>
+          <div className="container">{children}</div>
         </ConvexClientProvider>
       </body>
     </html>

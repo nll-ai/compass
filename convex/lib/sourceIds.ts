@@ -4,6 +4,7 @@
 export const ALL_SOURCE_IDS = [
   "exa",
   "pubmed",
+  "biorxiv",
   "edgar",
   "patents",
   "clinicaltrials",

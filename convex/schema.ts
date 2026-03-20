@@ -2,13 +2,36 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  /** Company / team boundary (e.g. email domain). */
+  /**
+   * Workspace / sharing boundary. Created explicitly in Settings; `ownerUserId` is team admin.
+   * `domain` optional — legacy rows only (old domain-based bootstrap).
+   */
   teams: defineTable({
     name: v.string(),
-    domain: v.string(),
+    domain: v.optional(v.string()),
+    ownerUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_domain", ["domain"]),
+
+  /**
+   * Email invite to join a team. Recipient accepts in Settings (link with token) or by invite id when signed in as that email.
+   */
+  teamEmailInvites: defineTable({
+    teamId: v.id("teams"),
+    emailLower: v.string(),
+    /** Opaque token for accept URL (unguessable). */
+    token: v.string(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    acceptedAt: v.optional(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_teamId", ["teamId"])
+    .index("by_team_email", ["teamId", "emailLower"])
+    .index("by_emailLower", ["emailLower"]),
 
   /** Users from WorkOS; created on first sign-in. */
   users: defineTable({
@@ -17,6 +40,8 @@ export default defineSchema({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     teamId: v.optional(v.id("teams")),
+    /** `solo`: left a team; no auto team assignment (users are not placed on a team until create or invite). */
+    teamPreference: v.optional(v.union(v.literal("solo"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -98,6 +123,7 @@ export default defineSchema({
     watchTargetId: v.id("watchTargets"),
     source: v.union(
       v.literal("pubmed"),
+      v.literal("biorxiv"),
       v.literal("clinicaltrials"),
       v.literal("edgar"),
       v.literal("exa"),
@@ -265,24 +291,4 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_watchTarget", ["watchTargetId"])
     .index("by_user_target", ["userId", "watchTargetId"]),
-
-  /** Per-watch-target scan schedule (one optional row per target). */
-  watchTargetSchedule: defineTable({
-    watchTargetId: v.id("watchTargets"),
-    timezone: v.string(),
-    dailyEnabled: v.boolean(),
-    dailyHour: v.number(),
-    dailyMinute: v.number(),
-    weeklyEnabled: v.boolean(),
-    weeklyDayOfWeek: v.number(),
-    weeklyHour: v.number(),
-    weeklyMinute: v.number(),
-    weekdaysOnly: v.optional(v.boolean()),
-    rawDescription: v.optional(v.string()),
-    lastDailyRunDate: v.optional(v.string()),
-    lastWeeklyRunDate: v.optional(v.string()),
-    updatedAt: v.number(),
-  })
-    .index("by_watchTarget", ["watchTargetId"])
-    .index("by_updatedAt", ["updatedAt"]),
 });

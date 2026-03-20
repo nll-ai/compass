@@ -54,6 +54,7 @@ function categoryForSource(source: string): Category {
   const m: Record<string, Category> = {
     edgar: "filing",
     pubmed: "publication",
+    biorxiv: "publication",
     clinicaltrials: "trial_update",
     exa: "news",
     openfda: "regulatory",

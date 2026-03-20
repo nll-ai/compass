@@ -51,6 +51,7 @@ Each data source has a paired background/text color for badges and visual marker
 | `clinicaltrials` | `#ccfbf1` | `#0f766e` |
 | `edgar` | `#fef3c7` | `#92400e` |
 | `pubmed` | `#e0e7ff` | `#3730a3` |
+| `biorxiv` | `#e0e7ff` | `#4338ca` |
 | `patents` | `#ede9fe` | `#5b21b6` |
 | `exa` | `#dbeafe` | `#1e40af` |
 | `rss` | `#f3e8ff` | `#6b21a8` |
@@ -402,6 +403,7 @@ align-items: center
 - Feedback buttons: `aria-pressed` reflects current state.
 - Focus pills / tabs: `role="tablist"` on container, `role="tab"` and `aria-selected` on each pill.
 - Breadcrumb container: `<nav>` element.
+- When a block of helper text applies to a specific field below it, give the text an `id` and reference it from the input with `aria-describedby` (e.g. Settings invite code + “no team” copy).
 - Images and icons: `aria-hidden="true"` for decorative elements.
 - Color contrast: all text/background combinations must meet WCAG 2.1 AA (4.5:1 for normal text, 3:1 for large text).
 

@@ -8,29 +8,30 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | **Primary hub.** Team-aware list (`listAll` with `subscribed`, `creatorLabel`), **In digest** checkbox (`targetSubscriptions`), sections for subscribed vs other team targets when `teams.getMyTeam` is set, per-card digest + scan button, **Running scans** via `scans.listRunning`. |
+| `app/targets/page.tsx` | **Primary hub.** Team-aware list (`listAll` with `subscribed`, `creatorLabel`), **In digest** checkbox (`targetSubscriptions`), sections for subscribed vs other team targets when `teams.getMyTeam` is set, per-card digest + scan button, **Running scans** via `scans.listRunning`. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
-| `app/targets/[id]/page.tsx` | Target detail: run scan, edit target, **scan schedule** (collapsible), insights links, source links, signal reports, delete. |
+| `app/targets/[id]/page.tsx` | Target detail: run scan, edit target, **Automatic digest timing** card (link to Settings), insights links, source links, signal reports, delete. |
 | `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
 | `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
 | `app/history/page.tsx` | Legacy redirect to `/targets`. |
-| `app/settings/page.tsx` | Settings: **Global digest schedule** (`userDigestSchedule.get` / `set` / `remove`, `/api/schedule/parse`), Slack/source placeholder. |
+| `app/settings/page.tsx` | Settings: **Team** (`getMyMembership`, `listTeamMembers`, `listMyTeamInvites`, `listPendingTeamInvitesForMyEmail`, `createTeam`, `renameTeam`, `leaveTeam`, `inviteTeamMemberByEmail`, `acceptTeamEmailInvite`, `revokeTeamInvite`, URL `?teamInvite=` handler in `Suspense`), **global digest schedule**. |
 | `components/compass/AddTargetForm.tsx` | Lookup + form; calls `watchTargets.create`, then `onAdded?.(id)` with returned ID. |
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
-| `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by target detail page for per-target schedule. |
+| `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by Settings digest schedule. |
+| `lib/convexAuthQuery.ts` | `useConvexAuthQuerySkip()` — use with `useQuery(..., skip ? "skip" : {})` until `useConvexAuth()` reports authenticated, so queries don’t hang on `undefined`. |
 | `convex/watchTargets.ts` | `create` (teamId, createdByUserId, auto-subscribe creator), `listAll` (team pool + `subscribed`, `creatorLabel`), `get` / `getByIds` (same-team), `update`, `remove` (cleans subscriptions), `getByIdsInternal`. |
-| `convex/teams.ts` | `getMyTeam`, `listTeamMembers`, `runTeamBootstrap` (internal; `MIGRATION_SECRET`). |
+| `convex/teams.ts` | `getMyTeam`, `getMyMembership`, `listTeamMembers`, `createTeam`, `renameTeam`, `leaveTeam`, `inviteTeamMemberByEmail`, `acceptTeamEmailInvite` (`token` \| `inviteId`), `listMyTeamInvites`, `listPendingTeamInvitesForMyEmail`, `revokeTeamInvite`, `getTeamEmailInviteEmailContextInternal`, `runTeamBootstrap`. |
 | `convex/targetSubscriptions.ts` | `subscribe`, `unsubscribe`, `isSubscribed`, `listMySubscribedTargetIds`, `listSubscribersForTarget`, `getSubscribedWatchTargetIdsForUserInternal`. |
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
-| `convex/scanSchedule.ts` | `getForTarget`, `listPerTargetSchedules`, `setForTarget`, `removeForTarget`, `checkAndTrigger` (cron: `userDigestSchedule` groups + `watchTargetSchedule`). |
+| `convex/scanSchedule.ts` | `checkAndTrigger` only (cron: `userDigestSchedule` groups → `scheduleScan` + `digestNotifyUserIds`). |
 | `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; both schedule `internal.email.sendDigestEmail` after insert. |
-| `convex/digestRuns.ts` | `getById` (internal), `get`, `listSignalReportsForTarget`, etc. |
+| `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, etc. |
 | `convex/users.ts` | `getUserById` (internal). |
-| `convex/email.ts` | `sendDigestEmail` (internal action, `"use node"`): combined HTML, per-recipient filtering via subscriptions when `teamId` set). |
-| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (visible targets); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). |
+| `convex/email.ts` | `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
+| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (visible targets); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
 | `convex/digestItems.ts` | `listByDigestRunInternal` (for email). |
-| `convex/lib/auth.ts` | `getVisibleWatchTargetIds`, `userOwnsTarget` (same-team), `ensureUserTeam` on sign-in. |
+| `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, `userOwnsTarget` (same-team). No automatic team assignment on sign-in. |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
 
 ---
@@ -50,7 +51,7 @@ This document specifies implementation-level details: modules, Convex functions,
   Returns: watch target doc or null (auth: must own or same-team target).
 
 - **watchTargets.listAll** (query)  
-  Returns: team targets when `user.teamId` set (else owned only), each with `subscribed` and optional `creatorLabel`.
+  Returns: **union** of targets you own (`userId`) and, when `user.teamId` is set, targets in that team (`teamId`), deduped — so owned targets with a stale/missing `teamId` still appear after team changes. Each row includes `subscribed` and optional `creatorLabel`.
 
 ### 2.2 Scans (run visibility and status)
 
@@ -76,27 +77,24 @@ This document specifies implementation-level details: modules, Convex functions,
 - **userDigestSchedule.set** (mutation) — upsert parsed schedule fields (+ clears last-run keys).  
 - **userDigestSchedule.remove** (mutation) — delete row.
 
-### 2.4 Scan schedule (per-target)
-
-- **scanSchedule.getForTarget** (query)  
-  Args: `{ watchTargetId }`.  
-  Returns: per-target schedule row or null (auth: must see target).
-
-- **scanSchedule.setForTarget** (mutation)  
-  Args: watchTargetId, timezone, dailyEnabled, dailyHour, dailyMinute, weeklyEnabled, weeklyDayOfWeek, weeklyHour, weeklyMinute, weekdaysOnly?, rawDescription?.  
-  Upserts one row in `watchTargetSchedule` for that target.
-
-- **scanSchedule.removeForTarget** (mutation)  
-  Args: `{ watchTargetId }`.  
-  Deletes the per-target schedule row if present.
+### 2.4 Cron digest schedule
 
 - **scanSchedule.checkAndTrigger** (internal mutation)  
-  Evaluates `userDigestSchedule` (grouped team+timezone+slot; `scheduleScan` with `digestNotifyUserIds`) and `watchTargetSchedule` (single-target scans).
+  Evaluates **`userDigestSchedule` only** (grouped team + timezone + slot, or per-user when no team); calls `scheduleScan` with merged `targetIds` and `digestNotifyUserIds`. No per-target table.
 
 ### 2.5 Teams and subscriptions
 
-- **teams.getMyTeam**, **teams.listTeamMembers** (queries).  
-- **teams.runTeamBootstrap** (mutation): `secret` must match Convex `MIGRATION_SECRET`; backfills teams, `teamId`, `createdByUserId`, subscriptions. Callable from dashboard / `npx convex run`.  
+- **teams.getMyTeam** (query) — team doc or null.  
+- **teams.getMyMembership** (query) — `{ team, teamPreference, isTeamAdmin }` for Settings (`isTeamAdmin`: `ownerUserId === user` or legacy team with no owner).  
+- **teams.listTeamMembers** (query).  
+- **teams.listMyTeamInvites** (query) — pending email invites for current team; admin only.  
+- **teams.listPendingTeamInvitesForMyEmail** (query) — pending invites matching signed-in email when user has no `teamId`.  
+- **teams.createTeam** (mutation) — `{ name }`; requires no `teamId`; sets `teams.ownerUserId`.  
+- **teams.renameTeam** (mutation) — `{ name }`; team admin only; updates `teams.name`.  
+- **teams.leaveTeam** (mutation) — transfers `ownerUserId` if leaver was owner; clears `teamId`, sets `teamPreference: "solo"`, prunes subs to others’ targets.  
+- **teams.inviteTeamMemberByEmail** / **acceptTeamEmailInvite** / **revokeTeamInvite** — `teamEmailInvites` (email + token, TTL, revoke); accept requires JWT email match.  
+- **teams.getTeamEmailInviteEmailContextInternal** (internal query) — payload for Resend.  
+- **teams.runTeamBootstrap** (mutation): `secret` must match Convex `MIGRATION_SECRET`; domain backfill for legacy deploys; sets `ownerUserId` when missing; backfills targets/subs.  
 - **targetSubscriptions.subscribe** / **unsubscribe** / **isSubscribed** / **listMySubscribedTargetIds** / **listSubscribersForTarget** / **getSubscribedWatchTargetIdsForUserInternal**.
 
 ### 2.6 Digests and email
@@ -117,6 +115,7 @@ This document specifies implementation-level details: modules, Convex functions,
 ## 3. Internal Convex API (used by actions / crons)
 
 - **digestRuns.getById** (internal query) — get digest run by id.
+- **digestRuns.getBySourceLinksHashInternal** (internal query) — dedupe digest insert by `sourceLinksHash` (used by `digestGenerate` action).
 - **digestItems.listByDigestRunInternal** (internal query) — all items for a digest run (email).
 - **scans.getScanRun** (internal query) — get scan run by id.
 - **watchTargets.getByIdsInternal** (internal query) — get watch targets by ids (no auth).
@@ -165,23 +164,19 @@ This document specifies implementation-level details: modules, Convex functions,
 
 ### 5.2 users, teams, targetSubscriptions, userDigestSchedule, scanRuns
 
-- **users:** `workosId`, `email`, `teamId?`, …; indexes `by_workosId`, `by_teamId`.
-- **teams:** `name`, `domain`, `createdAt`, `updatedAt`; index `by_domain`.
+- **users:** `workosId`, `email`, `teamId?`, `teamPreference?` (`"solo"` after leave; no auto team on sign-in), …; indexes `by_workosId`, `by_teamId`.
+- **teams:** `name`, `domain?` (legacy / bootstrap), `ownerUserId?` (admin), `createdAt`, `updatedAt`; index `by_domain`.
+- **teamEmailInvites:** `teamId`, `emailLower`, `token`, `createdByUserId`, `createdAt`, `expiresAt`, `revokedAt?`, `acceptedAt?`; indexes `by_token`, `by_teamId`, `by_team_email`, `by_emailLower`.
 - **targetSubscriptions:** `userId`, `watchTargetId`, `subscribedAt`; indexes `by_userId`, `by_watchTarget`, `by_user_target`.
-- **userDigestSchedule:** same shape as per-target schedule fields + `userId`; index `by_userId`.
+- **userDigestSchedule:** timezone, daily/weekly fields, `weekdaysOnly?`, `rawDescription?`, last-run date keys, `userId`; index `by_userId`. Sole source of automatic scan timing.
 - **scanRuns:** includes optional `digestNotifyUserIds` for combined digest email recipients.
 
-### 5.3 watchTargetSchedule (Convex table)
-
-- `watchTargetId`, `timezone`, `dailyEnabled`, `dailyHour`, `dailyMinute`, `weeklyEnabled`, `weeklyDayOfWeek`, `weeklyHour`, `weeklyMinute`, `weekdaysOnly?`, `rawDescription?`, `lastDailyRunDate?`, `lastWeeklyRunDate?`, `updatedAt`.
-- Index: `by_watchTarget` on `watchTargetId`.
-
-### 5.4 formatSchedule (lib/formatSchedule.ts)
+### 5.3 formatSchedule (lib/formatSchedule.ts)
 
 - **Input:** Object with timezone, daily* and weekly* booleans/numbers, weekdaysOnly?, rawDescription?.
 - **Output:** Human-readable string, e.g. `"Daily at 9:00. (America/New_York)"` or `"No automatic scans scheduled."`.
 
-### 5.5 AddTargetForm callback
+### 5.4 AddTargetForm callback
 
 - **Props:** `onAdded?: (targetId: Id<"watchTargets">) => void`.
 - **Invocation:** After successful `createTarget(...)`, component calls `onAdded?.(id)` with the returned id.

@@ -8,6 +8,7 @@ import { runEdgar } from "./sources/edgar";
 import { runOpenFda } from "./sources/openfda";
 import { runRss } from "./sources/rss";
 import { runPatents } from "./sources/patents";
+import { runBiorxivStub } from "./sources/biorxiv-stub";
 
 /**
  * Runner map: each source is invoked with SourceAgentContext.
@@ -16,6 +17,7 @@ import { runPatents } from "./sources/patents";
  */
 const RUNNERS: Record<SourceId, (context: SourceAgentContext) => Promise<SourceResult>> = {
   pubmed: (ctx) => runPubmed(ctx),
+  biorxiv: (ctx) => runBiorxivStub(ctx),
   clinicaltrials: (ctx) => runClinicalTrials(ctx),
   edgar: (ctx) => runEdgar(ctx),
   exa: (ctx) => runExa(ctx),

@@ -3,7 +3,7 @@
 import { createHash } from "crypto";
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { formatSourceDate } from "./lib/formatters";
 import { categoryForSource, synthesisEquivalentToHeadline } from "./lib/digestHelpers";
 
@@ -60,7 +60,9 @@ export const generate = internalAction({
     const rawItemIds = items.flatMap((i) => i.rawItemIds);
     const sourceLinksHash = rawItemIds.length > 0 ? computeSourceLinksHash(rawItemIds) : undefined;
     if (sourceLinksHash) {
-      const existing = await ctx.runQuery(api.digestRuns.getBySourceLinksHash, { sourceLinksHash });
+      const existing = await ctx.runQuery(internal.digestRuns.getBySourceLinksHashInternal, {
+        sourceLinksHash,
+      });
       if (existing) return;
     }
 

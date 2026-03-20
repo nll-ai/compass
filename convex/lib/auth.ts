@@ -6,38 +6,6 @@ type QueryCtx = GenericQueryCtx<DataModel>;
 type MutationCtx = GenericMutationCtx<DataModel>;
 type AnyCtx = QueryCtx | MutationCtx;
 
-function emailDomain(email: string): string | null {
-  const i = email.indexOf("@");
-  if (i < 0) return null;
-  const d = email.slice(i + 1).toLowerCase().trim();
-  return d || null;
-}
-
-/** Assign user to a team by email domain when they have no team yet. */
-async function ensureUserTeam(ctx: MutationCtx, userId: Id<"users">, email: string) {
-  const domain = emailDomain(email);
-  if (!domain) return;
-  const user = await ctx.db.get(userId);
-  if (user?.teamId) return;
-  const now = Date.now();
-  let team = await ctx.db
-    .query("teams")
-    .withIndex("by_domain", (q) => q.eq("domain", domain))
-    .first();
-  let teamId: Id<"teams">;
-  if (!team) {
-    teamId = await ctx.db.insert("teams", {
-      name: domain,
-      domain,
-      createdAt: now,
-      updatedAt: now,
-    });
-  } else {
-    teamId = team._id;
-  }
-  await ctx.db.patch(userId, { teamId, updatedAt: now });
-}
-
 /**
  * Returns the current user's Convex identity (from JWT), or null if unauthenticated.
  */
@@ -86,7 +54,6 @@ export async function getOrCreateUserId(ctx: MutationCtx): Promise<Id<"users">> 
       lastName: lastName ?? existing.lastName,
       updatedAt: now,
     });
-    await ensureUserTeam(ctx, existing._id, email);
     return existing._id;
   }
   const now = Date.now();
@@ -98,7 +65,6 @@ export async function getOrCreateUserId(ctx: MutationCtx): Promise<Id<"users">> 
     createdAt: now,
     updatedAt: now,
   });
-  await ensureUserTeam(ctx, userId, email);
   return userId;
 }
 

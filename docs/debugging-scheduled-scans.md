@@ -28,7 +28,7 @@ npx convex logs --history 100
   - `SCAN_SECRET` in Convex doesn’t match the one used by your Next.js app (e.g. in `.env.local` or Vercel env).
 
 - **Global digest schedule (Settings)**  
-  - Combined scans are driven by `userDigestSchedule` (not the per-target section on each target). If nothing runs at your chosen time, confirm a row exists in Convex **Data** → `userDigestSchedule` for your user, timezone matches expectation, and you have at least one **subscribed** active target (team mode) or owned active target (solo).
+  - Automatic scans are driven **only** by `userDigestSchedule` (Settings). If nothing runs at your chosen time, confirm a row exists in Convex **Data** → `userDigestSchedule` for your user, timezone matches expectation, and you have at least one **subscribed** active target (team mode) or owned active target (solo).
 
 ---
 

@@ -8,11 +8,13 @@ import { runEdgar } from "./edgar";
 import { runOpenFda } from "./openfda";
 import { runRss } from "./rss";
 import { runPatents } from "./patents";
+import { runBiorxivStub } from "./biorxiv-stub";
 
 export type { SourceId } from "../../sources/registry";
 
 const RUNNERS: Record<SourceId, (context: SourceAgentContext) => Promise<SourceResult>> = {
   pubmed: (ctx) => runPubmed(ctx),
+  biorxiv: (ctx) => runBiorxivStub(ctx),
   clinicaltrials: (ctx) => runClinicalTrials(ctx),
   edgar: (ctx) => runEdgar(ctx),
   exa: (ctx) => runExa(ctx),

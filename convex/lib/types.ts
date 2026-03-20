@@ -6,7 +6,15 @@ export type DigestCategory =
   | "filing"
   | "news"
   | "conference";
-export type SourceType = "pubmed" | "clinicaltrials" | "edgar" | "exa" | "openfda" | "rss" | "patents";
+export type SourceType =
+  | "pubmed"
+  | "biorxiv"
+  | "clinicaltrials"
+  | "edgar"
+  | "exa"
+  | "openfda"
+  | "rss"
+  | "patents";
 export type TherapeuticArea = "cardiovascular" | "oncology" | "other";
 
 export type WatchTarget = {

@@ -58,21 +58,6 @@ export const listRecent = query({
   },
 });
 
-export const createRun = mutation({
-  args: { period: v.union(v.literal("daily"), v.literal("weekly")) },
-  handler: async (ctx, { period }) => {
-    return await ctx.db.insert("scanRuns", {
-      scheduledFor: Date.now(),
-      status: "pending",
-      period,
-      sourcesTotal: SOURCES_TOTAL,
-      sourcesCompleted: 0,
-      totalItemsFound: 0,
-      newItemsFound: 0,
-    });
-  },
-});
-
 export const createRunForServer = mutation({
   args: {
     secret: v.string(),
@@ -192,10 +177,10 @@ export const getSourceStatuses = query({
     if (!run) return [];
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    if (run.targetIds?.length) {
-      const visible = await getVisibleWatchTargetIds(ctx, userId);
-      if (!run.targetIds.every((id) => visible.has(id))) return [];
-    }
+    // Align with scans.get / listRunning: runs without targetIds are not visible to clients.
+    if (!run.targetIds?.length) return [];
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    if (!run.targetIds.every((id) => visible.has(id))) return [];
     return await ctx.db
       .query("scanSourceStatus")
       .withIndex("by_scanRun", (q) => q.eq("scanRunId", scanRunId))

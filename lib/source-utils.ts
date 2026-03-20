@@ -8,6 +8,7 @@ export function sourceLabel(source: SourceType): string {
 /** Date label shown next to a source (e.g. "Pub date", "Trial start"). */
 const dateLabels: Record<string, string> = {
   pubmed: "Pub date",
+  biorxiv: "Posted",
   clinicaltrials: "Trial start",
   edgar: "Filed",
   exa: "Published",

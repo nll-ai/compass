@@ -323,6 +323,7 @@ a {
 .source-badge[data-source="clinicaltrials"] { background: #ccfbf1; color: #0f766e; }
 .source-badge[data-source="edgar"]          { background: #fef3c7; color: #92400e; }
 .source-badge[data-source="pubmed"]         { background: #e0e7ff; color: #3730a3; }
+.source-badge[data-source="biorxiv"]       { background: #e0e7ff; color: #4338ca; }
 .source-badge[data-source="patents"]        { background: #ede9fe; color: #5b21b6; }
 .source-badge[data-source="exa"]            { background: #dbeafe; color: #1e40af; }
 .source-badge[data-source="rss"]            { background: #f3e8ff; color: #6b21a8; }

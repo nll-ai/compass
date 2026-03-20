@@ -1,95 +1,7 @@
-import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds, userOwnsTarget } from "./lib/auth";
-
-/** Get scan schedule for a single watch target, if any. Caller must own the target. */
-export const getForTarget = query({
-  args: { watchTargetId: v.id("watchTargets") },
-  handler: async (ctx, { watchTargetId }) => {
-    const userId = await getUserIdFromIdentity(ctx);
-    if (!userId) return null;
-    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
-    return await ctx.db
-      .query("watchTargetSchedule")
-      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
-      .first();
-  },
-});
-
-/** List all per-target schedules for the current user's targets. */
-export const listPerTargetSchedules = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getUserIdFromIdentity(ctx);
-    if (!userId) return [];
-    const visible = await getVisibleWatchTargetIds(ctx, userId);
-    const all = await ctx.db.query("watchTargetSchedule").collect();
-    return all.filter((s) => visible.has(s.watchTargetId));
-  },
-});
-
-/** Set scan schedule for a single watch target (upsert). Caller must own the target. */
-export const setForTarget = mutation({
-  args: {
-    watchTargetId: v.id("watchTargets"),
-    timezone: v.string(),
-    dailyEnabled: v.boolean(),
-    dailyHour: v.number(),
-    dailyMinute: v.number(),
-    weeklyEnabled: v.boolean(),
-    weeklyDayOfWeek: v.number(),
-    weeklyHour: v.number(),
-    weeklyMinute: v.number(),
-    weekdaysOnly: v.optional(v.boolean()),
-    rawDescription: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getOrCreateUserId(ctx);
-    const { watchTargetId, ...rest } = args;
-    if (!(await userOwnsTarget(ctx, watchTargetId))) throw new Error("Unauthorized");
-    const target = await ctx.db.get(watchTargetId);
-    if (!target) throw new Error("Not found");
-    const now = Date.now();
-    const existing = await ctx.db
-      .query("watchTargetSchedule")
-      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
-      .first();
-    const doc = { ...rest, updatedAt: now };
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        ...doc,
-        lastDailyRunDate: undefined,
-        lastWeeklyRunDate: undefined,
-      });
-      return existing._id;
-    }
-    return await ctx.db.insert("watchTargetSchedule", {
-      watchTargetId,
-      ...doc,
-      lastDailyRunDate: undefined,
-      lastWeeklyRunDate: undefined,
-    });
-  },
-});
-
-/** Remove per-target schedule for a watch target. Caller must own the target. */
-export const removeForTarget = mutation({
-  args: { watchTargetId: v.id("watchTargets") },
-  handler: async (ctx, { watchTargetId }) => {
-    await getOrCreateUserId(ctx);
-    if (!(await userOwnsTarget(ctx, watchTargetId))) throw new Error("Unauthorized");
-    const target = await ctx.db.get(watchTargetId);
-    if (!target) throw new Error("Not found");
-    const row = await ctx.db
-      .query("watchTargetSchedule")
-      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
-      .first();
-    if (row) await ctx.db.delete(row._id);
-  },
-});
 
 /** Return current date and time in the given IANA timezone (e.g. "America/New_York"). */
 function nowInTimezone(timezone: string): { dateKey: string; weekday: number; hour: number; minute: number } {
@@ -158,11 +70,13 @@ type DigestCronGroup = {
   weekKey?: string;
 };
 
-/** Check if we should run daily/weekly and trigger scan. Runs every minute from cron; triggers at the exact scheduled minute. */
+/**
+ * Per-user digest schedule only (Settings → `userDigestSchedule`).
+ * Groups by team + local slot (or per-user key when no team) and triggers one combined `scheduleScan` per group.
+ */
 export const checkAndTrigger = internalMutation({
   args: {},
   handler: async (ctx) => {
-    // --- Per-user global digest schedule (Settings): grouped by team + local slot to dedupe scans ---
     const userSchedules = await ctx.db.query("userDigestSchedule").collect();
     const dailyGroups = new Map<string, DigestCronGroup>();
     const weeklyGroups = new Map<string, DigestCronGroup>();
@@ -171,7 +85,8 @@ export const checkAndTrigger = internalMutation({
       const tz = row.timezone || "UTC";
       const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
       const user = await ctx.db.get(row.userId);
-      const teamKey = user?.teamId ?? "solo";
+      const teamKey =
+        user?.teamId != null ? String(user.teamId) : `solo:${row.userId}`;
 
       if (row.dailyEnabled && hour === row.dailyHour && minute === row.dailyMinute) {
         const skipWeekdays = row.weekdaysOnly && (weekday === 0 || weekday === 6);
@@ -235,34 +150,6 @@ export const checkAndTrigger = internalMutation({
       }
       for (const rid of g.rowIds) {
         await ctx.db.patch(rid, { lastWeeklyRunDate: wk, updatedAt: now });
-      }
-    }
-
-    // --- Per-target schedules: scan only that target ---
-    const targetSchedules = await ctx.db.query("watchTargetSchedule").collect();
-    for (const row of targetSchedules) {
-      const tz = row.timezone || "UTC";
-      const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
-
-      if (row.dailyEnabled && hour === row.dailyHour && minute === row.dailyMinute) {
-        const skipWeekdays = row.weekdaysOnly && (weekday === 0 || weekday === 6);
-        if (!skipWeekdays && row.lastDailyRunDate !== dateKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
-            period: "daily",
-            targetIds: [row.watchTargetId],
-          });
-          await ctx.db.patch(row._id, { lastDailyRunDate: dateKey, updatedAt: Date.now() });
-        }
-      }
-      if (row.weeklyEnabled && row.weeklyDayOfWeek === weekday && hour === row.weeklyHour && minute === row.weeklyMinute) {
-        const weekKey = mondayOfWeek(dateKey);
-        if (row.lastWeeklyRunDate !== weekKey) {
-          await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
-            period: "weekly",
-            targetIds: [row.watchTargetId],
-          });
-          await ctx.db.patch(row._id, { lastWeeklyRunDate: weekKey, updatedAt: Date.now() });
-        }
       }
     }
   },
