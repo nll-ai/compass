@@ -8,10 +8,13 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | Watch targets list: **Running scans** section (pending/running runs via `scans.listRunning`), link to `/targets/new` and `/targets/[id]`. |
+| `app/targets/page.tsx` | **Primary hub.** Watch targets list with per-card digest snippet + scan button, **Running scans** section (pending/running runs via `scans.listRunning`), link to `/targets/new` and `/targets/[id]`. |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/targets/[id]/page.tsx` | Target detail: source selector, run scan, edit target, **scan schedule** (collapsible), insights links, source links, signal reports, delete. |
+| `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
+| `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
+| `app/history/page.tsx` | Legacy redirect to `/targets`. |
 | `app/settings/page.tsx` | Settings: Slack integration and source config (no scan schedule). |
 | `components/compass/AddTargetForm.tsx` | Lookup + form; calls `watchTargets.create`, then `onAdded?.(id)` with returned ID. |
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |

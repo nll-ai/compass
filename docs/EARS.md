@@ -11,6 +11,18 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
+## 0. Navigation and information architecture
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-NAV-1 | Ubiquitous | **The system shall** use a three-item top navigation: Watch Targets, Chat, Settings. The "Compass" brand in the header links to `/targets`. |
+| R-NAV-2 | Event-driven | **When** a signed-in user navigates to `/`, **the system shall** redirect to `/targets`. |
+| R-NAV-3 | Event-driven | **When** a user navigates to `/dashboard` or `/history`, **the system shall** redirect to `/targets` (legacy URLs). |
+| R-NAV-4 | Ubiquitous | **The system shall** present the Watch Targets page (`/targets`) as the primary hub, showing for each target: name (link to detail), type badge, therapeutic area or affiliation, latest digest snippet, and a Run scan button. |
+| R-NAV-5 | Unwanted behavior | **The system shall not** show a separate Dashboard or History page in the top navigation. |
+
+---
+
 ## 1. Add watch target and navigation
 
 | ID | Pattern | Requirement |

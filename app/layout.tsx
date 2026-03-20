@@ -11,12 +11,9 @@ export const metadata: Metadata = {
 };
 
 const nav = [
-  { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/history", label: "History" },
   { href: "/targets", label: "Watch Targets" },
-  { href: "/settings", label: "Settings" },
   { href: "/chat", label: "Chat" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -36,7 +33,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 flexWrap: "wrap",
               }}
             >
-              <strong>Compass</strong>
+              <a href="/targets" style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>Compass</a>
               {nav.map((item) => (
                 <a key={item.href} href={item.href} className="muted">
                   {item.label}

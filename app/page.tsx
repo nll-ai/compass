@@ -1,8 +1,12 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getAuthSafe } from "@/lib/auth";
 
 export default async function HomePage() {
   const { user, signInUrl } = await getAuthSafe();
+
+  if (user) {
+    redirect("/targets");
+  }
 
   return (
     <div className="stack" style={{ gap: "1.5rem", maxWidth: "32rem" }}>
@@ -12,25 +16,9 @@ export default async function HomePage() {
       <p className="muted" style={{ margin: 0 }}>
         Competitive intelligence monitoring for biotech teams.
       </p>
-      {user ? (
-        <Link
-          href="/dashboard"
-          className="card"
-          style={{
-            display: "inline-block",
-            padding: "0.75rem 1.25rem",
-            borderRadius: 8,
-            background: "#111827",
-            color: "white",
-            fontWeight: 600,
-          }}
-        >
-          Go to Dashboard →
-        </Link>
-      ) : signInUrl ? (
+      {signInUrl ? (
         <a
           href={signInUrl}
-          className="card"
           style={{
             display: "inline-block",
             padding: "0.75rem 1.25rem",
