@@ -6,6 +6,38 @@ type QueryCtx = GenericQueryCtx<DataModel>;
 type MutationCtx = GenericMutationCtx<DataModel>;
 type AnyCtx = QueryCtx | MutationCtx;
 
+function emailDomain(email: string): string | null {
+  const i = email.indexOf("@");
+  if (i < 0) return null;
+  const d = email.slice(i + 1).toLowerCase().trim();
+  return d || null;
+}
+
+/** Assign user to a team by email domain when they have no team yet. */
+async function ensureUserTeam(ctx: MutationCtx, userId: Id<"users">, email: string) {
+  const domain = emailDomain(email);
+  if (!domain) return;
+  const user = await ctx.db.get(userId);
+  if (user?.teamId) return;
+  const now = Date.now();
+  let team = await ctx.db
+    .query("teams")
+    .withIndex("by_domain", (q) => q.eq("domain", domain))
+    .first();
+  let teamId: Id<"teams">;
+  if (!team) {
+    teamId = await ctx.db.insert("teams", {
+      name: domain,
+      domain,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    teamId = team._id;
+  }
+  await ctx.db.patch(userId, { teamId, updatedAt: now });
+}
+
 /**
  * Returns the current user's Convex identity (from JWT), or null if unauthenticated.
  */
@@ -54,10 +86,11 @@ export async function getOrCreateUserId(ctx: MutationCtx): Promise<Id<"users">> 
       lastName: lastName ?? existing.lastName,
       updatedAt: now,
     });
+    await ensureUserTeam(ctx, existing._id, email);
     return existing._id;
   }
   const now = Date.now();
-  return await ctx.db.insert("users", {
+  const userId = await ctx.db.insert("users", {
     workosId,
     email,
     firstName,
@@ -65,6 +98,8 @@ export async function getOrCreateUserId(ctx: MutationCtx): Promise<Id<"users">> 
     createdAt: now,
     updatedAt: now,
   });
+  await ensureUserTeam(ctx, userId, email);
+  return userId;
 }
 
 /**
@@ -88,12 +123,38 @@ export async function userOwnsTarget(
   const userId = await getUserIdFromIdentity(ctx);
   if (!userId) return false;
   const target = await ctx.db.get(watchTargetId);
-  return target?.userId === userId;
+  if (!target) return false;
+  if (target.userId === userId) return true;
+  const user = await ctx.db.get(userId);
+  if (user?.teamId != null && target.teamId === user.teamId) return true;
+  return false;
 }
 
 /**
  * Returns true if the current user owns the digest run (via its scan run's targetIds).
  */
+/** Watch targets the user may see: owned plus same-team (when teamId set). */
+export async function getVisibleWatchTargetIds(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+): Promise<Set<Id<"watchTargets">>> {
+  const visible = new Set<Id<"watchTargets">>();
+  const owned = await ctx.db
+    .query("watchTargets")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  for (const t of owned) visible.add(t._id);
+  const user = await ctx.db.get(userId);
+  if (user?.teamId) {
+    const teamTargets = await ctx.db
+      .query("watchTargets")
+      .withIndex("by_teamId", (q) => q.eq("teamId", user.teamId))
+      .collect();
+    for (const t of teamTargets) visible.add(t._id);
+  }
+  return visible;
+}
+
 export async function userOwnsDigestRun(
   ctx: QueryCtx,
   digestRunId: import("../_generated/dataModel").Id<"digestRuns">,
@@ -104,10 +165,12 @@ export async function userOwnsDigestRun(
   if (!digestRun) return false;
   const scanRun = await ctx.db.get(digestRun.scanRunId);
   if (!scanRun?.targetIds?.length) return false;
-  const userTargets = await ctx.db
-    .query("watchTargets")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
-    .collect();
-  const userSet = new Set(userTargets.map((t) => t._id));
-  return scanRun.targetIds.every((id) => userSet.has(id));
+  const user = await ctx.db.get(userId);
+  for (const tid of scanRun.targetIds) {
+    const t = await ctx.db.get(tid);
+    if (!t) return false;
+    const visible = t.userId === userId || (user?.teamId != null && t.teamId === user.teamId);
+    if (!visible) return false;
+  }
+  return true;
 }

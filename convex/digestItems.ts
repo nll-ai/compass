@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   getOrCreateUserId,
@@ -12,6 +12,17 @@ export const listByDigestRun = query({
   args: { digestRunId: v.id("digestRuns") },
   handler: async (ctx, { digestRunId }) => {
     if (!(await userOwnsDigestRun(ctx, digestRunId))) return [];
+    return await ctx.db
+      .query("digestItems")
+      .withIndex("by_digestRun", (q) => q.eq("digestRunId", digestRunId))
+      .collect();
+  },
+});
+
+/** Internal: all digest items for a run (email assembly). */
+export const listByDigestRunInternal = internalQuery({
+  args: { digestRunId: v.id("digestRuns") },
+  handler: async (ctx, { digestRunId }) => {
     return await ctx.db
       .query("digestItems")
       .withIndex("by_digestRun", (q) => q.eq("digestRunId", digestRunId))
@@ -50,8 +61,7 @@ export const setFeedback = mutation({
     const item = await ctx.db.get(digestItemId);
     if (!item) throw new Error("Not found");
     const userId = await getOrCreateUserId(ctx);
-    const target = await ctx.db.get(item.watchTargetId);
-    if (!target || target.userId !== userId) throw new Error("Unauthorized");
+    if (!(await userOwnsTarget(ctx, item.watchTargetId))) throw new Error("Unauthorized");
     const now = Date.now();
     await ctx.db.patch(digestItemId, { feedback, feedbackAt: now });
     if (item) {

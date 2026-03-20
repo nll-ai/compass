@@ -51,19 +51,26 @@ Person-type targets are scanned for publications and news mentioning the researc
 - Frontend receives ID in `onAdded(id)` and navigates to `/targets/${id}`.
 - No new backend flows; only callback contract and client-side navigation.
 
-### 3.2 Scan visibility and per-target schedule
+### 3.2 Scan visibility and schedules
 
-- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for the current user's targets, via the `scans.listRunning` query. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
-- **Per-target schedule:** One optional row per target in `watchTargetSchedule`. Cron `checkAndTrigger` evaluates `watchTargetSchedule` rows and, when due, calls `scheduleScan` with a single target ID.
-- Schedule configuration lives only on the **individual watch target page** (collapsible “Scan schedule” section). User enters natural language + timezone; frontend calls `/api/schedule/parse` then `scanSchedule.setForTarget` or `removeForTarget`.
+- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
+- **Global digest schedule (Settings):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` groups due rows by team + local time slot, merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan.
+- **Per-target schedule:** One optional row per target in `watchTargetSchedule`. Cron evaluates these rows and, when due, calls `scheduleScan` with a single target ID (no `digestNotifyUserIds`; email falls back to first target owner).
+- **Per-target UI:** Natural language + timezone on the target detail page → `/api/schedule/parse` → `scanSchedule.setForTarget` / `removeForTarget`.
+- **Settings UI:** Same parse flow for **global** digest schedule → `userDigestSchedule.set` / `remove`.
 
 ### 3.3 Digest creation and email
 
 - Digest is created in one of two ways: (1) from the Next.js scan API after a successful scan with new items (`createDigestRunWithItemsFromServer`), or (2) from a Convex action (`createDigestRunWithItems`).
 - Both creation paths, after persisting the digest run and items, schedule an internal action: `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
-- **sendDigestEmail** (Convex action, `"use node"`): Loads digest run → scan run → first target → user; reads `user.email`; if `RESEND_API_KEY` is set, POSTs to Resend API to send one email with summary and link to target’s digest page. No DB writes; best-effort delivery.
+- **sendDigestEmail** (Convex action, `"use node"`): Loads digest run, scan run, all digest items, and target names; if `digestNotifyUserIds` is set, sends one HTML email per user (items filtered by subscription when `user.teamId` is set). Otherwise resolves recipient from the first target’s owner. If `RESEND_API_KEY` is set, POSTs to Resend; best-effort delivery.
 
-### 3.4 Raw-item summaries (timeline and overlay)
+### 3.4 Teams and subscriptions
+
+- Users get a `teamId` from email domain (auto-created `teams` row). Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
+- Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans.
+
+### 3.5 Raw-item summaries (timeline and overlay)
 
 - Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD § 4.2 (POST /api/scan) and EARS § 4.5.
 
@@ -83,7 +90,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 ## 6. Non-functional and cross-cutting
 
 - **Event-driven side effects:** Domain events (e.g. digest created) trigger downstream work via Convex scheduler or internal actions, not inline in the same mutation or API handler. See AGENTS.md § Event-driven side effects.
-- **Auth and scoping:** Convex queries/mutations that expose user data use `getUserIdFromIdentity` or `getOrCreateUserId`; internal queries/actions used by crons or email have no user context and resolve ownership via stored IDs (e.g. `watchTargets.userId` → `users.email`).
+- **Auth and scoping:** Convex queries/mutations use `getUserIdFromIdentity` / `getOrCreateUserId` plus `userOwnsTarget` / `getVisibleWatchTargetIds` for same-team access. Crons and email resolve recipients via `digestNotifyUserIds`, subscriptions, and target ownership.
 - **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL` are set in Convex (e.g. `npx convex env set`), not in Next.js `.env.local`.
 
 ---
@@ -101,6 +108,9 @@ flowchart TB
 
   subgraph convex [Convex]
     WT[watchTargets]
+    Teams[teams]
+    Subs[targetSubscriptions]
+    UDS[userDigestSchedule]
     WTS[watchTargetSchedule]
     scanRuns[scanRuns]
     Digests[digests]
@@ -114,6 +124,8 @@ flowchart TB
 
   NewTarget -->|create mutation, onAdded id| TargetDetail
   TargetDetail -->|getForTarget, setForTarget, removeForTarget| WTS
+  Settings -->|get, set, remove| UDS
+  TargetsPage -->|listAll, subscribe| WT
   TargetsPage -->|listRunning| scanRuns[scanRuns]
   Cron -->|scheduleScan| ScanAPI[POST /api/scan]
   Digests -->|scheduler.runAfter| EmailAction

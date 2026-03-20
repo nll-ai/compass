@@ -36,6 +36,9 @@ import type * as sources_openfda from "../sources/openfda.js";
 import type * as sources_patents from "../sources/patents.js";
 import type * as sources_pubmed from "../sources/pubmed.js";
 import type * as sources_rss from "../sources/rss.js";
+import type * as targetSubscriptions from "../targetSubscriptions.js";
+import type * as teams from "../teams.js";
+import type * as userDigestSchedule from "../userDigestSchedule.js";
 import type * as users from "../users.js";
 import type * as watchTargets from "../watchTargets.js";
 
@@ -74,6 +77,9 @@ declare const fullApi: ApiFromModules<{
   "sources/patents": typeof sources_patents;
   "sources/pubmed": typeof sources_pubmed;
   "sources/rss": typeof sources_rss;
+  targetSubscriptions: typeof targetSubscriptions;
+  teams: typeof teams;
+  userDigestSchedule: typeof userDigestSchedule;
   users: typeof users;
   watchTargets: typeof watchTargets;
 }>;

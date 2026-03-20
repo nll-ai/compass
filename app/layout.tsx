@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { getAuthSafe } from "@/lib/auth";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { signOutAction } from "./actions/auth";
@@ -33,11 +34,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 flexWrap: "wrap",
               }}
             >
-              <a href="/targets" style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>Compass</a>
+              <Link href="/targets" style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>
+                Compass
+              </Link>
               {nav.map((item) => (
-                <a key={item.href} href={item.href} className="muted">
+                <Link key={item.href} href={item.href} className="muted">
                   {item.label}
-                </a>
+                </Link>
               ))}
               <span style={{ marginLeft: "auto" }}>
                 {user ? (

@@ -1,7 +1,9 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
+import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds, userOwnsTarget } from "./lib/auth";
 
 /** Get scan schedule for a single watch target, if any. Caller must own the target. */
 export const getForTarget = query({
@@ -9,8 +11,7 @@ export const getForTarget = query({
   handler: async (ctx, { watchTargetId }) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return null;
-    const target = await ctx.db.get(watchTargetId);
-    if (!target || target.userId !== userId) return null;
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
     return await ctx.db
       .query("watchTargetSchedule")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -24,13 +25,9 @@ export const listPerTargetSchedules = query({
   handler: async (ctx) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    const targets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const targetIds = new Set(targets.map((t) => t._id));
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
     const all = await ctx.db.query("watchTargetSchedule").collect();
-    return all.filter((s) => targetIds.has(s.watchTargetId));
+    return all.filter((s) => visible.has(s.watchTargetId));
   },
 });
 
@@ -52,8 +49,9 @@ export const setForTarget = mutation({
   handler: async (ctx, args) => {
     const userId = await getOrCreateUserId(ctx);
     const { watchTargetId, ...rest } = args;
+    if (!(await userOwnsTarget(ctx, watchTargetId))) throw new Error("Unauthorized");
     const target = await ctx.db.get(watchTargetId);
-    if (!target || target.userId !== userId) throw new Error("Unauthorized");
+    if (!target) throw new Error("Not found");
     const now = Date.now();
     const existing = await ctx.db
       .query("watchTargetSchedule")
@@ -81,9 +79,10 @@ export const setForTarget = mutation({
 export const removeForTarget = mutation({
   args: { watchTargetId: v.id("watchTargets") },
   handler: async (ctx, { watchTargetId }) => {
-    const userId = await getOrCreateUserId(ctx);
+    await getOrCreateUserId(ctx);
+    if (!(await userOwnsTarget(ctx, watchTargetId))) throw new Error("Unauthorized");
     const target = await ctx.db.get(watchTargetId);
-    if (!target || target.userId !== userId) throw new Error("Unauthorized");
+    if (!target) throw new Error("Not found");
     const row = await ctx.db
       .query("watchTargetSchedule")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -126,10 +125,119 @@ function mondayOfWeek(dateKey: string): string {
   return `${date.getFullYear()}-${mm}-${dd}`;
 }
 
-/** Check if we should run daily/weekly and trigger scan (per-target only). Runs every minute from cron; triggers at the exact scheduled minute. */
+async function activeDigestTargetIdsForUser(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<Id<"watchTargets">[]> {
+  const user = await ctx.db.get(userId);
+  const subs = await ctx.db
+    .query("targetSubscriptions")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  if (user?.teamId != null && subs.length > 0) {
+    const out: Id<"watchTargets">[] = [];
+    for (const s of subs) {
+      const t = await ctx.db.get(s.watchTargetId);
+      if (t?.active) out.push(t._id);
+    }
+    return out;
+  }
+  const owned = await ctx.db
+    .query("watchTargets")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .filter((q) => q.eq(q.field("active"), true))
+    .collect();
+  return owned.map((t) => t._id);
+}
+
+type DigestCronGroup = {
+  targetIds: Set<Id<"watchTargets">>;
+  userIds: Set<Id<"users">>;
+  rowIds: Id<"userDigestSchedule">[];
+  dateKey: string;
+  weekKey?: string;
+};
+
+/** Check if we should run daily/weekly and trigger scan. Runs every minute from cron; triggers at the exact scheduled minute. */
 export const checkAndTrigger = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // --- Per-user global digest schedule (Settings): grouped by team + local slot to dedupe scans ---
+    const userSchedules = await ctx.db.query("userDigestSchedule").collect();
+    const dailyGroups = new Map<string, DigestCronGroup>();
+    const weeklyGroups = new Map<string, DigestCronGroup>();
+
+    for (const row of userSchedules) {
+      const tz = row.timezone || "UTC";
+      const { dateKey, weekday, hour, minute } = nowInTimezone(tz);
+      const user = await ctx.db.get(row.userId);
+      const teamKey = user?.teamId ?? "solo";
+
+      if (row.dailyEnabled && hour === row.dailyHour && minute === row.dailyMinute) {
+        const skipWeekdays = row.weekdaysOnly && (weekday === 0 || weekday === 6);
+        if (!skipWeekdays && row.lastDailyRunDate !== dateKey) {
+          const targets = await activeDigestTargetIdsForUser(ctx, row.userId);
+          const gk = `${teamKey}|d|${tz}|${dateKey}|${hour}|${minute}`;
+          let g = dailyGroups.get(gk);
+          if (!g) {
+            g = { targetIds: new Set(), userIds: new Set(), rowIds: [], dateKey };
+            dailyGroups.set(gk, g);
+          }
+          for (const id of targets) g.targetIds.add(id);
+          g.userIds.add(row.userId);
+          g.rowIds.push(row._id);
+        }
+      }
+
+      if (row.weeklyEnabled && row.weeklyDayOfWeek === weekday && hour === row.weeklyHour && minute === row.weeklyMinute) {
+        const weekKey = mondayOfWeek(dateKey);
+        if (row.lastWeeklyRunDate !== weekKey) {
+          const targets = await activeDigestTargetIdsForUser(ctx, row.userId);
+          const gk = `${teamKey}|w|${tz}|${weekKey}|${weekday}|${hour}|${minute}`;
+          let g = weeklyGroups.get(gk);
+          if (!g) {
+            g = { targetIds: new Set(), userIds: new Set(), rowIds: [], dateKey, weekKey };
+            weeklyGroups.set(gk, g);
+          }
+          for (const id of targets) g.targetIds.add(id);
+          g.userIds.add(row.userId);
+          g.rowIds.push(row._id);
+        }
+      }
+    }
+
+    const now = Date.now();
+    for (const g of dailyGroups.values()) {
+      const targetIds = [...g.targetIds];
+      const userIds = [...g.userIds];
+      if (targetIds.length > 0 && userIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
+          period: "daily",
+          targetIds,
+          digestNotifyUserIds: userIds,
+        });
+      }
+      for (const rid of g.rowIds) {
+        await ctx.db.patch(rid, { lastDailyRunDate: g.dateKey, updatedAt: now });
+      }
+    }
+
+    for (const g of weeklyGroups.values()) {
+      const targetIds = [...g.targetIds];
+      const userIds = [...g.userIds];
+      const wk = g.weekKey ?? mondayOfWeek(g.dateKey);
+      if (targetIds.length > 0 && userIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.scans.scheduleScan, {
+          period: "weekly",
+          targetIds,
+          digestNotifyUserIds: userIds,
+        });
+      }
+      for (const rid of g.rowIds) {
+        await ctx.db.patch(rid, { lastWeeklyRunDate: wk, updatedAt: now });
+      }
+    }
+
     // --- Per-target schedules: scan only that target ---
     const targetSchedules = await ctx.db.query("watchTargetSchedule").collect();
     for (const row of targetSchedules) {

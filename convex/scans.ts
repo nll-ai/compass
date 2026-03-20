@@ -1,8 +1,9 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { ALL_SOURCE_IDS, SOURCES_TOTAL } from "./lib/sourceIds";
-import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
+import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds } from "./lib/auth";
 
 function checkScanSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
@@ -14,11 +15,7 @@ export const listRunning = query({
   handler: async (ctx) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
     const pending = await ctx.db
       .query("scanRuns")
       .withIndex("by_status", (q) => q.eq("status", "pending"))
@@ -32,7 +29,7 @@ export const listRunning = query({
       (run) =>
         run.targetIds &&
         run.targetIds.length > 0 &&
-        run.targetIds.every((id) => userTargetIdSet.has(id)),
+        run.targetIds.every((id) => visible.has(id)),
     );
     filtered.sort((a, b) => b.scheduledFor - a.scheduledFor);
     return filtered;
@@ -44,11 +41,7 @@ export const listRecent = query({
   handler: async (ctx, args) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
     const limit = args.limit ?? 10;
     const all = await ctx.db
       .query("scanRuns")
@@ -59,7 +52,7 @@ export const listRecent = query({
       (run) =>
         run.targetIds &&
         run.targetIds.length > 0 &&
-        run.targetIds.every((id) => userTargetIdSet.has(id)),
+        run.targetIds.every((id) => visible.has(id)),
     );
     return filtered.slice(0, limit);
   },
@@ -187,12 +180,8 @@ export const get = query({
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return null;
     if (!run.targetIds?.length) return null;
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userSet = new Set(userTargets.map((t) => t._id));
-    return run.targetIds.every((tid) => userSet.has(tid)) ? run : null;
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    return run.targetIds.every((tid) => visible.has(tid)) ? run : null;
   },
 });
 
@@ -204,12 +193,8 @@ export const getSourceStatuses = query({
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
     if (run.targetIds?.length) {
-      const userTargets = await ctx.db
-        .query("watchTargets")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
-        .collect();
-      const userSet = new Set(userTargets.map((t) => t._id));
-      if (!run.targetIds.every((id) => userSet.has(id))) return [];
+      const visible = await getVisibleWatchTargetIds(ctx, userId);
+      if (!run.targetIds.every((id) => visible.has(id))) return [];
     }
     return await ctx.db
       .query("scanSourceStatus")
@@ -222,6 +207,7 @@ export const scheduleScan = internalMutation({
   args: {
     period: v.union(v.literal("daily"), v.literal("weekly")),
     targetIds: v.optional(v.array(v.id("watchTargets"))),
+    digestNotifyUserIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
     const scanRunId = await ctx.db.insert("scanRuns", {
@@ -233,6 +219,7 @@ export const scheduleScan = internalMutation({
       totalItemsFound: 0,
       newItemsFound: 0,
       targetIds: args.targetIds,
+      digestNotifyUserIds: args.digestNotifyUserIds,
     });
     for (const source of ALL_SOURCE_IDS) {
       await ctx.db.insert("scanSourceStatus", {
@@ -258,14 +245,31 @@ export const runScan = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getOrCreateUserId(ctx);
-    const userTargets = await ctx.db
-      .query("watchTargets")
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    const subs = await ctx.db
+      .query("targetSubscriptions")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
-    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
-    const targetIds =
-      args.targetIds?.filter((id) => userTargetIdSet.has(id)) ??
-      userTargets.map((t) => t._id);
+    const subSet = new Set(subs.map((s) => s.watchTargetId));
+
+    async function canScan(tid: Id<"watchTargets">): Promise<boolean> {
+      if (!visible.has(tid)) return false;
+      const t = await ctx.db.get(tid);
+      if (!t?.active) return false;
+      if (t.userId === userId) return true;
+      return subSet.has(tid);
+    }
+
+    let targetIds: Id<"watchTargets">[] = [];
+    if (args.targetIds?.length) {
+      for (const id of args.targetIds) {
+        if (await canScan(id)) targetIds.push(id);
+      }
+    } else {
+      for (const id of visible) {
+        if (await canScan(id)) targetIds.push(id);
+      }
+    }
     const scanRunId = await ctx.db.insert("scanRuns", {
       scheduledFor: Date.now(),
       status: "pending",

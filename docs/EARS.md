@@ -43,6 +43,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-SCH-5 | State-driven | **Where** a watch target has no per-target schedule, **the system shall** display "No schedule set." and a form to add one (natural-language description and timezone). |
 | R-SCH-6 | Ubiquitous | **The system shall** accept natural-language schedule input (e.g. "Every day at 9am") and timezone, and persist the parsed schedule for the current target via the existing Convex API (`setForTarget` / removeForTarget). |
 | R-SCH-7 | Ubiquitous | **The system shall** use the schedule parsing endpoint (`/api/schedule/parse`) and format/display logic (e.g. `formatSchedule`) for per-target schedule on the target page. |
+| R-SCH-8 | Ubiquitous | **The system shall** expose a **global digest schedule** on the Settings page (`/settings`): natural-language description and timezone, persisted in `userDigestSchedule` via `userDigestSchedule.set` / `remove`, using the same parse endpoint and `formatSchedule` as per-target schedules. |
 
 ---
 
@@ -78,6 +79,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-DIG-5 | Ubiquitous | **The system shall** include in the email a short summary (e.g. executive summary) and a link to the digest view (e.g. `{APP_URL}/targets/{targetId}/digests`). |
 | R-DIG-6 | Unwanted behavior | **The system shall not** block or fail digest creation if the email send fails; email delivery is best-effort. |
 | R-DIG-7 | Ubiquitous | **The system shall** trigger the email send asynchronously (e.g. via Convex scheduler) so that the mutation that creates the digest does not wait on the email. |
+| R-DIG-8 | Ubiquitous | **The system shall** send a **combined digest email** when a scan run covers multiple watch targets: HTML body with executive summary, per-target sections (significance, category, headline, short synthesis), links to `/targets/{id}/digests` and `/targets`. **When** `scanRuns.digestNotifyUserIds` is set, **the system shall** send one message per listed user, filtering digest items to that user’s subscribed targets when the user has a `teamId`. |
 
 ---
 
@@ -98,7 +100,21 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 6. Researcher/Faculty as Watch Target Type
+## 6. Teams, subscriptions, and shared targets
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-TEAM-1 | Event-driven | **When** a user signs in and has no `teamId`, **the system shall** assign them to a `teams` row keyed by email domain (create team if needed), via `getOrCreateUserId` / domain logic. |
+| R-TEAM-2 | Ubiquitous | **The system shall** store optional `teamId` on `users` and `watchTargets`, and `createdByUserId` on watch targets for attribution. |
+| R-TEAM-3 | Ubiquitous | **The system shall** expose `targetSubscriptions` (subscribe / unsubscribe / list) so a user can opt into team watch targets for digests and scheduled scans. |
+| R-TEAM-4 | Ubiquitous | **The system shall** list team watch targets on `/targets` with an “In digest” control, sections for subscribed vs other team targets when the user has a team, and optional “Added by {creator}” from `createdByUserId`. |
+| R-TEAM-5 | Ubiquitous | **The system shall** scope visibility of targets, scans, digests, raw items, and per-target schedules to **owned** or **same-team** targets (`userOwnsTarget` / `getVisibleWatchTargetIds`). |
+| R-TEAM-6 | Ubiquitous | **The system shall** run the global digest cron using **subscribed** active targets for team users (and owned active targets when not on a team or without subscriptions); **when** multiple users in the same team share the same local schedule slot, **the system shall** merge into one `scheduleScan` with combined `targetIds` and `digestNotifyUserIds`. |
+| R-TEAM-7 | Optional feature | **If** `MIGRATION_SECRET` is set in Convex env, **the system shall** provide `teams.runTeamBootstrap` (mutation with matching `secret` arg) to backfill teams, `teamId` on users and targets, and owner subscriptions for one-time deploy. |
+
+---
+
+## 7. Researcher/Faculty as Watch Target Type
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
@@ -115,7 +131,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 7. Traceability
+## 8. Traceability
 
 - **HLD:** [docs/HLD.md](HLD.md) — architecture and data flow for these features.
 - **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, and APIs that implement these requirements.

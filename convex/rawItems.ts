@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { userOwnsTarget } from "./lib/auth";
 
 const sourceValidator = v.union(
   v.literal("pubmed"),
@@ -143,6 +144,7 @@ export const listByWatchTarget = query({
     excludeHidden: v.optional(v.boolean()),
   },
   handler: async (ctx, { watchTargetId, limit = 100, sources, excludeHidden }) => {
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return [];
     let items = await ctx.db
       .query("rawItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))

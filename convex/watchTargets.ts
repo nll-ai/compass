@@ -1,13 +1,28 @@
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
+import { getOrCreateUserId, getUserIdFromIdentity, userOwnsTarget } from "./lib/auth";
 
 export const listActive = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
+    const user = await ctx.db.get(userId);
+    if (user?.teamId) {
+      const subs = await ctx.db
+        .query("targetSubscriptions")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect();
+      const out: Doc<"watchTargets">[] = [];
+      for (const s of subs) {
+        const t = await ctx.db.get(s.watchTargetId);
+        if (t?.active) out.push(t);
+      }
+      out.sort((a, b) => b.updatedAt - a.updatedAt);
+      return out;
+    }
     return await ctx.db
       .query("watchTargets")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -22,11 +37,45 @@ export const listAll = query({
   handler: async (ctx) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    return await ctx.db
-      .query("watchTargets")
+    const user = await ctx.db.get(userId);
+    let targets: Doc<"watchTargets">[] = [];
+    if (user?.teamId) {
+      targets = await ctx.db
+        .query("watchTargets")
+        .withIndex("by_teamId", (q) => q.eq("teamId", user.teamId))
+        .order("desc")
+        .collect();
+    } else {
+      targets = await ctx.db
+        .query("watchTargets")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .order("desc")
+        .collect();
+    }
+    const subs = await ctx.db
+      .query("targetSubscriptions")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .order("desc")
       .collect();
+    const subSet = new Set(subs.map((s) => s.watchTargetId));
+    const out: Array<
+      Doc<"watchTargets"> & { subscribed: boolean; creatorLabel?: string }
+    > = [];
+    for (const t of targets) {
+      let creatorLabel: string | undefined;
+      if (t.createdByUserId) {
+        const cu = await ctx.db.get(t.createdByUserId);
+        if (cu) {
+          const name = [cu.firstName, cu.lastName].filter(Boolean).join(" ").trim();
+          creatorLabel = name.length > 0 ? name : cu.email;
+        }
+      }
+      out.push({
+        ...t,
+        subscribed: subSet.has(t._id),
+        creatorLabel,
+      });
+    }
+    return out;
   },
 });
 
@@ -37,8 +86,7 @@ export const get = query({
     if (watchTargetId === null) return null;
     const doc = await ctx.db.get(watchTargetId);
     if (!doc) return null;
-    const userId = await getUserIdFromIdentity(ctx);
-    if (!userId || doc.userId !== userId) return null;
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
     return doc;
   },
 });
@@ -49,10 +97,11 @@ export const getByIds = query({
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
     const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
-    return results.filter(
-      (doc): doc is NonNullable<typeof doc> =>
-        doc != null && doc.userId === userId,
-    );
+    const out: NonNullable<(typeof results)[number]>[] = [];
+    for (const doc of results) {
+      if (doc && (await userOwnsTarget(ctx, doc._id))) out.push(doc);
+    }
+    return out;
   },
 });
 
@@ -120,13 +169,22 @@ export const create = mutation({
   args: watchTargetValidator,
   handler: async (ctx, args) => {
     const userId = await getOrCreateUserId(ctx);
+    const user = await ctx.db.get(userId);
     const now = Date.now();
-    return await ctx.db.insert("watchTargets", {
+    const targetId = await ctx.db.insert("watchTargets", {
       ...args,
       userId,
+      teamId: user?.teamId,
+      createdByUserId: userId,
       createdAt: now,
       updatedAt: now,
     });
+    await ctx.db.insert("targetSubscriptions", {
+      userId,
+      watchTargetId: targetId,
+      subscribedAt: now,
+    });
+    return targetId;
   },
 });
 
@@ -170,6 +228,12 @@ export const remove = mutation({
       .first();
     if (schedule) await ctx.db.delete(schedule._id);
 
+    const subs = await ctx.db
+      .query("targetSubscriptions")
+      .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
+      .collect();
+    for (const s of subs) await ctx.db.delete(s._id);
+
     await ctx.db.delete(id);
     return id;
   },
@@ -208,7 +272,7 @@ export const refreshLearnedTermsForTarget = internalAction({
       return { updated: false, reason: "insufficient_feedback" };
     }
 
-    const target = await ctx.runQuery(api.watchTargets.get, { id: watchTargetId });
+    const target = await ctx.runQuery(api.watchTargets.get, { id: String(watchTargetId) });
     const displayName = target?.displayName ?? "this target";
 
     const goodBlock =

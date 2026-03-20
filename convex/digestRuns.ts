@@ -2,18 +2,14 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { getOrCreateUserId, getUserIdFromIdentity } from "./lib/auth";
+import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds, userOwnsTarget } from "./lib/auth";
 
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userTargetIdSet = new Set(userTargets.map((t) => t._id));
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
     const limit = args.limit ?? 20;
     const all = await ctx.db
       .query("digestRuns")
@@ -25,7 +21,7 @@ export const listRecent = query({
       const scanRun = await ctx.db.get(run.scanRunId);
       if (
         scanRun?.targetIds?.length &&
-        scanRun.targetIds.every((id) => userTargetIdSet.has(id))
+        scanRun.targetIds.every((id) => visible.has(id))
       ) {
         filtered.push(run);
         if (filtered.length >= limit) break;
@@ -44,12 +40,8 @@ export const get = query({
     if (!userId) return null;
     const scanRun = await ctx.db.get(run.scanRunId);
     if (!scanRun?.targetIds?.length) return null;
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userSet = new Set(userTargets.map((t) => t._id));
-    if (!scanRun.targetIds.every((tid) => userSet.has(tid))) return null;
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    if (!scanRun.targetIds.every((tid) => visible.has(tid))) return null;
     return run;
   },
 });
@@ -77,8 +69,7 @@ export const listSignalReportsForTarget = query({
   handler: async (ctx, { watchTargetId, limit = 20 }) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    const target = await ctx.db.get(watchTargetId);
-    if (!target || target.userId !== userId) return [];
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return [];
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -96,8 +87,7 @@ export const getLatestForTarget = query({
   handler: async (ctx, { watchTargetId }) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return null;
-    const target = await ctx.db.get(watchTargetId);
-    if (!target || target.userId !== userId) return null;
+    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -128,12 +118,8 @@ export const remove = mutation({
     if (!scanRun?.targetIds?.length) {
       throw new Error("Unauthorized");
     }
-    const userTargets = await ctx.db
-      .query("watchTargets")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const userSet = new Set(userTargets.map((t) => t._id));
-    if (!scanRun.targetIds.every((tid) => userSet.has(tid))) {
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    if (!scanRun.targetIds.every((tid) => visible.has(tid))) {
       throw new Error("Unauthorized");
     }
     const items = await ctx.db

@@ -2,18 +2,32 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  /** Company / team boundary (e.g. email domain). */
+  teams: defineTable({
+    name: v.string(),
+    domain: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_domain", ["domain"]),
+
   /** Users from WorkOS; created on first sign-in. */
   users: defineTable({
     workosId: v.string(),
     email: v.string(),
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
+    teamId: v.optional(v.id("teams")),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_workosId", ["workosId"]),
+  })
+    .index("by_workosId", ["workosId"])
+    .index("by_teamId", ["teamId"]),
 
   watchTargets: defineTable({
     userId: v.optional(v.id("users")),
+    teamId: v.optional(v.id("teams")),
+    /** User who created the target (attribution). */
+    createdByUserId: v.optional(v.id("users")),
     name: v.string(),
     displayName: v.string(),
     type: v.union(v.literal("drug"), v.literal("target"), v.literal("company"), v.literal("person")),
@@ -35,6 +49,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_userId", ["userId"])
+    .index("by_teamId", ["teamId"])
     .index("by_active", ["active"])
     .index("by_therapeutic_area", ["therapeuticArea"]),
 
@@ -56,6 +71,8 @@ export default defineSchema({
     error: v.optional(v.string()),
     /** Targets included in this run; used to scope listRecent by user. */
     targetIds: v.optional(v.array(v.id("watchTargets"))),
+    /** When set, digest email is sent to these users (e.g. global schedule owner); each gets a filtered view by subscription in team mode. */
+    digestNotifyUserIds: v.optional(v.array(v.id("users"))),
   })
     .index("by_status", ["status"])
     .index("by_scheduledFor", ["scheduledFor"]),
@@ -220,6 +237,34 @@ export default defineSchema({
   })
     .index("by_rawItem", ["rawItemId"])
     .index("by_feedback", ["feedback"]),
+
+  /** Per-user digest / combined scan schedule (Settings). One row per user when configured. */
+  userDigestSchedule: defineTable({
+    userId: v.id("users"),
+    timezone: v.string(),
+    dailyEnabled: v.boolean(),
+    dailyHour: v.number(),
+    dailyMinute: v.number(),
+    weeklyEnabled: v.boolean(),
+    weeklyDayOfWeek: v.number(),
+    weeklyHour: v.number(),
+    weeklyMinute: v.number(),
+    weekdaysOnly: v.optional(v.boolean()),
+    rawDescription: v.optional(v.string()),
+    lastDailyRunDate: v.optional(v.string()),
+    lastWeeklyRunDate: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_userId", ["userId"]),
+
+  /** User opts in to team watch targets for digests and scans. */
+  targetSubscriptions: defineTable({
+    userId: v.id("users"),
+    watchTargetId: v.id("watchTargets"),
+    subscribedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_watchTarget", ["watchTargetId"])
+    .index("by_user_target", ["userId", "watchTargetId"]),
 
   /** Per-watch-target scan schedule (one optional row per target). */
   watchTargetSchedule: defineTable({
