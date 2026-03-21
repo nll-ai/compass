@@ -46,7 +46,11 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 - **[docs/EARS.md](docs/EARS.md)** — Requirements in EARS format (Ubiquitous, Event-driven, State-driven, Optional feature, Unwanted behavior). Update when adding, changing, or retiring requirements.
 - **[docs/styleguide.md](docs/styleguide.md)** — Visual and IA patterns (including Settings sidebar tabs). Update when changing layout, tokens, or accessibility patterns for shared UI; required reading before UI work (see above).
 
-When you add a feature, fix a bug that changes behavior, or refactor a module: revise the corresponding HLD/LLD/EARS sections so the docs stay accurate. Do not merge or ship changes that leave the design documents out of date.
+### Task completion — design-doc audit (subagent)
+
+**On completion of every task** (feature, bugfix, refactor, or material change to product behavior or APIs), **launch a subagent** whose job is to ensure **[`docs/HLD.md`](docs/HLD.md)**, **[`docs/LLD.md`](docs/LLD.md)**, and **[`docs/EARS.md`](docs/EARS.md)** stay accurate relative to the work just completed. In Cursor, use the **Task** tool (or equivalent) with a focused prompt, for example: compare touched files and behavior to those three documents; report drift; **edit HLD/LLD/EARS** where needed so architecture, contracts, and requirements match the codebase. Treat the task as **not done** until that pass finishes and any required doc updates are applied (or the subagent explicitly confirms no changes were necessary).
+
+Update HLD/LLD/EARS **during** implementation when the required edits are obvious; the subagent pass is the backstop for drift. Do not merge or ship changes that leave the design documents out of date.
 
 ## Conventions
 
