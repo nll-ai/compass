@@ -39,9 +39,12 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 
 **Any change to the product or implementation must be reflected in the design documents** in the same changeset (or immediately after). The docs are the single source of truth; keep them in sync with the code.
 
+**Arrow of intent:** **HLD** → **LLD** → **EARS** (architecture → implementation map / contracts → testable requirements). **Settings and other UI chrome** also follow **[`docs/styleguide.md`](docs/styleguide.md)** (canonical layout/components); Settings has a **traceability table** under §6 *Layout patterns* linking EARS ↔ HLD §4.2 ↔ LLD ↔ styleguide — keep those in sync when `/settings` changes. Propagate changes downward so the chain stays aligned; [docs/EARS.md](docs/EARS.md) §8 links back to HLD, LLD, and the styleguide.
+
 - **[docs/HLD.md](docs/HLD.md)** — High-Level Design: system context, major components, data flow, external integrations. Update when architecture or integration points change.
 - **[docs/LLD.md](docs/LLD.md)** — Low-Level Design: modules, Convex functions, API contracts, key data structures. Update when adding/removing modules, endpoints, or Convex API surface.
 - **[docs/EARS.md](docs/EARS.md)** — Requirements in EARS format (Ubiquitous, Event-driven, State-driven, Optional feature, Unwanted behavior). Update when adding, changing, or retiring requirements.
+- **[docs/styleguide.md](docs/styleguide.md)** — Visual and IA patterns (including Settings sidebar tabs). Update when changing layout, tokens, or accessibility patterns for shared UI; required reading before UI work (see above).
 
 When you add a feature, fix a bug that changes behavior, or refactor a module: revise the corresponding HLD/LLD/EARS sections so the docs stay accurate. Do not merge or ship changes that leave the design documents out of date.
 

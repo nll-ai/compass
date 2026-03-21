@@ -350,6 +350,26 @@ align-items: center
 - `.container` max-width is `1080px` — optimized for readability.
 - Timeline padding-left (`2.25rem`) accommodates the track line and month markers.
 
+### Settings page (sidebar tabs)
+
+- **Layout:** `.settings-layout` — flex row with `gap: 1.5rem`: `.settings-sidebar` (`flex: 0 0 11rem`, `min-width: 10rem`) wraps the tab rail; `.settings-panels` (`flex: 1`, `min-width: 0`) holds both tab panels.
+- **Page chrome:** `<main class="stack" aria-label="Settings">`, `<h1>Settings</h1>`, muted subtitle (*Team workspace, digest timing, and related preferences.*). Team invite acceptance from `?teamInvite=` runs inside `<Suspense>` (child component); success/error messaging is shown on the **Team** tab (app switches to Team when the invite flow completes or errors).
+- **Tabs:** `nav.settings-sidebar` with `aria-label="Settings categories"`. `.settings-tablist` has `role="tablist"` and `aria-orientation="vertical"` (wide viewports). Tabs: **`Team`** / **`Digest schedule`** — `role="tab"`, stable ids `settings-tab-team` / `settings-tab-digest`, `aria-selected`, `aria-controls` → `settings-panel-team` / `settings-panel-digest`. Panels: `role="tabpanel"`, `aria-labelledby` matching tab id, `hidden` when inactive. Default selected tab: **Team** (`activeTab === "team"`).
+- **Panels — content split:** **Team** — membership, rename (admins), members list, invite-by-email, pending invites (admin), leave team, no-team states (create team, pending invites for email, optional invite-token copy). **Digest schedule** — natural-language schedule + timezone, save/clear, `formatSchedule` preview; no team controls here.
+- **Responsive:** `@media (max-width: 720px)` — `.settings-layout` column; sidebar full width; `.settings-tablist` row + `flex-wrap`; `.settings-tab` `width: auto`.
+- **Classes:** `.settings-tab:focus-visible` uses a blue outline ring (see `app/globals.css`); do not duplicate tab rail / selected styles inline on Settings.
+
+#### Settings UI — traceability (arrow of intent)
+
+| Layer | Where | What |
+|-------|--------|------|
+| **EARS** | `docs/EARS.md` | R-NAV-6 (tabs + a11y), R-NAV-7 (invite URL → Team tab feedback), R-SCH-1 / R-SCH-7 (digest only in Digest tab), R-TEAM-8 (Team panel behaviors) |
+| **HLD** | `docs/HLD.md` §4.2 | Settings UI summary + data flow (schedule API, team invite link) |
+| **LLD** | `docs/LLD.md` §1 | `app/settings/page.tsx`, `app/globals.css` settings classes |
+| **Style (this doc)** | §6 Settings | Visual layout, roles, responsive behavior — canonical for UI chrome |
+
+When changing Settings layout or tab behavior, update **this section**, **EARS**, and the **HLD/LLD** rows above in the same changeset.
+
 ---
 
 ## 7. States
@@ -403,7 +423,7 @@ align-items: center
 - Feedback buttons: `aria-pressed` reflects current state.
 - Focus pills / tabs: `role="tablist"` on container, `role="tab"` and `aria-selected` on each pill.
 - Breadcrumb container: `<nav>` element.
-- When a block of helper text applies to a specific field below it, give the text an `id` and reference it from the input with `aria-describedby` (e.g. Settings invite code + “no team” copy).
+- When a block of helper text applies to a specific field below it, give the text an `id` and reference it from the input with `aria-describedby` (e.g. Settings team invite email field + helper copy).
 - Images and icons: `aria-hidden="true"` for decorative elements.
 - Color contrast: all text/background combinations must meet WCAG 2.1 AA (4.5:1 for normal text, 3:1 for large text).
 
@@ -422,6 +442,7 @@ align-items: center
 | `.source-badge` | Source-type pill (colored via `data-source`) |
 | `.timeline-*` | Timeline-specific components |
 | `.focus-bar`, `.focus-pill` | Segmented control |
+| `.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels` | Settings sidebar + vertical tabs + panel region |
 | `.source-link-feedback` | Thumbs up/down pill group (Source Links + Timeline) |
 | `.timeline-empty` | Empty state for timeline |
 

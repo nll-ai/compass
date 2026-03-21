@@ -88,13 +88,16 @@ export default function SettingsPage() {
   const [teamMessage, setTeamMessage] = useState<string | null>(null);
   const [inviteEmailInput, setInviteEmailInput] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
+  const [activeTab, setActiveTab] = useState<"team" | "digest">("team");
 
   const onInviteLinkAccepted = useCallback(() => {
     setTeamMessage("You joined the team from your invite link.");
     setTeamError(null);
+    setActiveTab("team");
   }, []);
   const onInviteLinkError = useCallback((message: string) => {
     setTeamError(message);
+    setActiveTab("team");
   }, []);
 
   useEffect(() => {
@@ -134,8 +137,45 @@ export default function SettingsPage() {
         <SettingsTeamInviteFromUrl onAccepted={onInviteLinkAccepted} onError={onInviteLinkError} />
       </Suspense>
       <h1>Settings</h1>
-      <p className="muted">Team, digest schedule, Slack integration, and source config.</p>
+      <p className="muted">Team workspace, digest timing, and related preferences.</p>
 
+      <div className="settings-layout">
+        <nav className="settings-sidebar" aria-label="Settings categories">
+          <div className="settings-tablist" role="tablist" aria-orientation="vertical">
+            <button
+              type="button"
+              role="tab"
+              id="settings-tab-team"
+              className="settings-tab"
+              aria-selected={activeTab === "team"}
+              aria-controls="settings-panel-team"
+              tabIndex={activeTab === "team" ? 0 : -1}
+              onClick={() => setActiveTab("team")}
+            >
+              Team
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="settings-tab-digest"
+              className="settings-tab"
+              aria-selected={activeTab === "digest"}
+              aria-controls="settings-panel-digest"
+              tabIndex={activeTab === "digest" ? 0 : -1}
+              onClick={() => setActiveTab("digest")}
+            >
+              Digest schedule
+            </button>
+          </div>
+        </nav>
+
+        <div className="settings-panels stack" style={{ gap: "1rem" }}>
+          <div
+            id="settings-panel-team"
+            role="tabpanel"
+            aria-labelledby="settings-tab-team"
+            hidden={activeTab !== "team"}
+          >
       <section className="card stack" aria-labelledby="team-heading">
         <h2 id="team-heading" style={{ margin: 0, fontSize: "1.1rem" }}>
           Team
@@ -480,7 +520,7 @@ export default function SettingsPage() {
                 try {
                   await createTeam({ name });
                   setNewTeamName("");
-                  setTeamMessage("Team created. You’re admin — invite teammates by email above.");
+                  setTeamMessage("Team created. You’re admin — invite teammates by email from this tab.");
                 } catch (err) {
                   setTeamError(err instanceof Error ? err.message : "Could not create team");
                 } finally {
@@ -534,7 +574,14 @@ export default function SettingsPage() {
           </p>
         )}
       </section>
+          </div>
 
+          <div
+            id="settings-panel-digest"
+            role="tabpanel"
+            aria-labelledby="settings-tab-digest"
+            hidden={activeTab !== "digest"}
+          >
       <section className="card stack" aria-labelledby="digest-schedule-heading">
         <h2 id="digest-schedule-heading" style={{ margin: 0, fontSize: "1.1rem" }}>
           Digest schedule
@@ -658,6 +705,9 @@ export default function SettingsPage() {
           </p>
         )}
       </section>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }

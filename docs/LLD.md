@@ -2,6 +2,8 @@
 
 This document specifies implementation-level details: modules, Convex functions, API contracts, and key data structures. It is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)).
 
+**Arrow of intent:** sits between [HLD](HLD.md) (what the system does at a high level) and [EARS](EARS.md) (requirements). **Settings UI** also maps to [styleguide.md](styleguide.md) §6 (see traceability table there). When you change code, update the relevant LLD tables and cross-check HLD/EARS/styleguide.
+
 ---
 
 ## 1. Module and file layout (relevant areas)
@@ -15,7 +17,8 @@ This document specifies implementation-level details: modules, Convex functions,
 | `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
 | `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
 | `app/history/page.tsx` | Legacy redirect to `/targets`. |
-| `app/settings/page.tsx` | Settings: **Team** (`getMyMembership`, `listTeamMembers`, `listMyTeamInvites`, `listPendingTeamInvitesForMyEmail`, `createTeam`, `renameTeam`, `leaveTeam`, `inviteTeamMemberByEmail`, `acceptTeamEmailInvite`, `revokeTeamInvite`, URL `?teamInvite=` handler in `Suspense`), **global digest schedule**. |
+| `app/settings/page.tsx` | Settings: **sidebar tabs** (Team | Digest schedule), default **Team**; `activeTab` state; ARIA ids `settings-tab-*` / `settings-panel-*`; **Team** panel (`getMyMembership`, `listTeamMembers`, invites, create/leave/rename); **Digest** panel (`userDigestSchedule`, `/api/schedule/parse`); `Suspense` + `SettingsTeamInviteFromUrl` for `?teamInvite=` → `acceptTeamEmailInvite`, `router.replace("/settings")` on success, callbacks switch to Team tab for messages. See [styleguide.md](styleguide.md) §6. |
+| `app/globals.css` | `.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels` — Settings tab layout (see `docs/styleguide.md`). |
 | `components/compass/AddTargetForm.tsx` | Lookup + form; calls `watchTargets.create`, then `onAdded?.(id)` with returned ID. |
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
 | `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by Settings digest schedule. |
@@ -110,6 +113,10 @@ This document specifies implementation-level details: modules, Convex functions,
   Args: `{ digestRunId }`.  
   Loads digest items; uses `scanRuns.digestNotifyUserIds` when set; Resend HTML with per-target sections; subscription filter for team users via `getSubscribedWatchTargetIdsForUserInternal`.
 
+- **email.sendTeamInviteEmail** (internal action)  
+  Args: `{ inviteId }` (scheduled from `teams.inviteTeamMemberByEmail`).  
+  Loads invite context via `getTeamEmailInviteEmailContextInternal`; Resend HTML with accept link `{APP_URL}/settings?teamInvite={token}` when `RESEND_API_KEY` is set.
+
 ---
 
 ## 3. Internal Convex API (used by actions / crons)
@@ -121,6 +128,8 @@ This document specifies implementation-level details: modules, Convex functions,
 - **watchTargets.getByIdsInternal** (internal query) — get watch targets by ids (no auth).
 - **users.getUserById** (internal query) — get user by id (no auth).
 - **targetSubscriptions.getSubscribedWatchTargetIdsForUserInternal** (internal query).
+- **teams.getTeamEmailInviteEmailContextInternal** (internal query) — payload for Resend team-invite email.
+- **email.sendDigestEmail** / **email.sendTeamInviteEmail** (internal actions, `"use node"`) — Resend; digest after digest insert; team invite after `inviteTeamMemberByEmail` schedules it.
 
 ---
 

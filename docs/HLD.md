@@ -2,6 +2,8 @@
 
 This document describes the high-level architecture of Compass: major components, data flow, and integration points. It is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)). Historical scaffold / phase notes may appear under [`docs/plans/`](plans/).
 
+**Arrow of intent (design chain):** **HLD** (system context, data flow, integrations) → **LLD** (modules, Convex/API contracts, env, operations) → **EARS** (testable “shall” requirements). **Presentation** (layout, component patterns, Settings tab chrome): **[`docs/styleguide.md`](styleguide.md)** — keep aligned when UI changes; Settings has an explicit traceability table there (EARS ↔ HLD §4.2 ↔ LLD ↔ styleguide). Changes should flow *down* the chain: update HLD when architecture shifts, LLD when contracts or files change, EARS when user-visible behavior or constraints change, styleguide when visual or IA patterns change. **Traceability:** EARS §8 links back here, to LLD, and to the styleguide.
+
 ---
 
 ## 1. System context
@@ -44,37 +46,37 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ## 4. Data flow (relevant to recent features)
 
-### 3.1 Add watch target and redirect
+### 4.1 Add watch target and redirect
 
 - User submits "Add Watch Target" from `/targets/new`.
 - Frontend calls `watchTargets.create` mutation; mutation returns new `Id<"watchTargets">`.
 - Frontend receives ID in `onAdded(id)` and navigates to `/targets/${id}`.
 - No new backend flows; only callback contract and client-side navigation.
 
-### 3.2 Scan visibility and schedules
+### 4.2 Scan visibility and schedules
 
 - **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
 - **Digest schedule (Settings only):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` evaluates **only** these rows, groups due users by **team** + local time slot (users without a `teamId` are keyed **per user**, not merged across accounts), merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan. There is **no** per-target automatic schedule table or cron path.
-- **Settings UI:** Natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`.
+- **Settings UI:** Sidebar tabs (**Team** | **Digest schedule**); default tab **Team**; `?teamInvite=` handled under `Suspense`, with success/error surfaced on the Team tab. Digest panel: natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`. **Layout, ARIA, and breakpoints:** [`docs/styleguide.md`](styleguide.md) §6 (Settings page).
 - **Target detail:** Explains that automatic timing is configured on Settings; manual “Run scan” remains on the target page.
 
-### 3.3 Digest creation and email
+### 4.3 Digest creation and email
 
 - Digest is created in one of two ways: (1) from the Next.js scan API after a successful scan with new items (`createDigestRunWithItemsFromServer`), or (2) from a Convex action (`createDigestRunWithItems`).
 - Both creation paths, after persisting the digest run and items, schedule an internal action: `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
 - **sendDigestEmail** (Convex action, `"use node"`): Loads digest run, scan run, all digest items, and target names; if `digestNotifyUserIds` is set, sends one HTML email per user (items filtered by subscription when `user.teamId` is set; team-filtered users with no matching items do not receive the run-wide executive summary). Otherwise resolves recipient from the first target’s owner. If `RESEND_API_KEY` is set, POSTs to Resend; non-OK responses throw so failures surface in Convex logs/retries.
 - **sendTeamInviteEmail** (internal action): After `teams.inviteTeamMemberByEmail`, scheduled with `inviteId`; loads invite context and sends Resend HTML with **Accept** link to `{APP_URL}/settings?teamInvite={token}` when `RESEND_API_KEY` is set; otherwise logs skip (invite still valid for in-app accept).
 
-### 3.4 Teams and subscriptions
+### 4.4 Teams and subscriptions
 
 - **No domain auto-team:** Sign-in does **not** assign `teamId`. Users join a workspace by **creating a team** (they become `ownerUserId` / admin) or **accepting an email invite** from Settings. Optional `teams.runTeamBootstrap` (with `MIGRATION_SECRET`) can still backfill domain-based teams for legacy data.
 - **Settings → Team:** **Create team**, **Invite teammate by email** (admins; Resend email with accept link when configured), **Rename team** (admins only), **Leave team** (ownership transfers to another member when possible). Pending invites stored in `teamEmailInvites` (token, normalized email, TTL); recipients accept via link (`/settings?teamInvite=`) or **Pending invitations** on Settings when signed in with the invited email.
 - Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
 - Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans.
 
-### 3.5 Raw-item summaries (timeline and overlay)
+### 4.5 Raw-item summaries (timeline and overlay)
 
-- Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD § 4.2 (POST /api/scan) and EARS § 4.5.
+- Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD §4.2 (POST /api/scan) and EARS §4.5.
 
 ---
 
@@ -118,6 +120,7 @@ flowchart TB
     scanRuns[scanRuns]
     Digests[digests]
     EmailAction[email.sendDigestEmail]
+    InviteEmail[email.sendTeamInviteEmail]
     Cron[checkAndTrigger cron]
   end
 
@@ -127,7 +130,10 @@ flowchart TB
 
   NewTarget -->|create mutation, onAdded id| TargetDetail
   TargetDetail -->|manual scan, edit target| WT
-  Settings -->|get, set, remove| UDS
+  Settings -->|Digest tab: schedule| UDS
+  Settings -->|Team tab: membership, invites| Teams
+  Teams -->|scheduler after invite| InviteEmail
+  InviteEmail -->|fetch| Resend
   TargetsPage -->|listAll, subscribe| WT
   TargetsPage -->|listRunning| scanRuns
   Cron -->|userDigestSchedule only| UDS

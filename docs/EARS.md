@@ -1,6 +1,6 @@
 # Compass — Requirements (EARS)
 
-Requirements are written using the Easy Approach to Requirements Syntax (EARS). This document is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)).
+Requirements are written using the Easy Approach to Requirements Syntax (EARS). This document is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)). It is the **bottom** of the **arrow of intent**: [HLD](HLD.md) (architecture) → [LLD](LLD.md) (implementation contracts) → **EARS** (verifiable “shall” statements). **Settings UI** layout, roles, and responsive rules are also specified in [styleguide.md](styleguide.md) §6 (Settings page); keep EARS, HLD §4.2, LLD, and the styleguide in sync when changing `/settings`. §8 links upward.
 
 **EARS patterns used:**
 - **Ubiquitous:** The &lt;system&gt; shall &lt;action&gt;.
@@ -20,6 +20,8 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-NAV-3 | Event-driven | **When** a user navigates to `/dashboard` or `/history`, **the system shall** redirect to `/targets` (legacy URLs). |
 | R-NAV-4 | Ubiquitous | **The system shall** present the Watch Targets page (`/targets`) as the primary hub, showing for each target: name (link to detail), type badge, therapeutic area or affiliation, latest digest snippet, and a Run scan button. |
 | R-NAV-5 | Unwanted behavior | **The system shall not** show a separate Dashboard or History page in the top navigation. |
+| R-NAV-6 | Ubiquitous | **The system shall** on the Settings page (`/settings`) present **sidebar tabs** (e.g. **Team** | **Digest schedule**) with a single visible panel at a time: team membership, invites, create/leave/rename in the Team panel; automatic digest schedule controls only in the Digest schedule panel (see R-SCH-1, R-TEAM-8). Tabs shall use an accessible tab pattern (tablist / tab / tabpanel). |
+| R-NAV-7 | Event-driven | **When** the user opens `/settings` with a `teamInvite` query parameter and invite acceptance completes or fails, **the system shall** ensure the **Team** tab is selected so success or error feedback is visible (in addition to R-TEAM-12 acceptance semantics). |
 
 ---
 
@@ -37,12 +39,13 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
-| R-SCH-1 | Ubiquitous | **The system shall** expose **automatic** digest timing **only** on the Settings page (`/settings`), persisted per signed-in user in `userDigestSchedule` via `userDigestSchedule.set` / `remove`. |
+| R-SCH-1 | Ubiquitous | **The system shall** expose **automatic** digest timing **only** on the Settings page (`/settings`), in the **Digest schedule** tab/panel, persisted per signed-in user in `userDigestSchedule` via `userDigestSchedule.set` / `remove`. |
 | R-SCH-2 | Unwanted behavior | **The system shall not** persist per-watch-target cron schedules, Convex APIs for per-target schedules, or a per-target schedule form on target detail pages. |
 | R-SCH-3 | Ubiquitous | **The system shall** use the schedule parsing endpoint (`POST /api/schedule/parse`) and `formatSchedule` **only** for the Settings digest schedule. |
 | R-SCH-4 | Ubiquitous | **The system shall** on each target detail page link users to Settings for automatic digest timing (combined scans follow the user’s global schedule). |
 | R-SCH-5 | Ubiquitous | **The system shall** run cron `checkAndTrigger` against **`userDigestSchedule` only** (grouped by team + local slot or per-user when no team), scheduling combined `scheduleScan` with `digestNotifyUserIds` as today. |
 | R-SCH-6 | Unwanted behavior | **The system shall not** show a separate “scan per watch target” schedule list on Settings; Settings holds one global digest schedule row per user. |
+| R-SCH-7 | Unwanted behavior | **The system shall not** duplicate the digest schedule form on the Team tab; automatic timing controls belong only in the Digest schedule tab (R-NAV-6). |
 
 ---
 
@@ -50,7 +53,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
-| R-SCAN-1 | Ubiquitous | **The system shall** expose a list of currently pending and running scan runs on the Watch Targets page (`/targets`), scoped to the current user's watch targets, showing for each run: status (pending/running), scheduled or started time, target names, and source progress (e.g. X/Y sources). |
+| R-SCAN-1 | Ubiquitous | **The system shall** expose a list of currently pending and running scan runs on the Watch Targets page (`/targets`), scoped to **watch targets the user can see** (owned or same-team, consistent with `scans.listRunning` / `getVisibleWatchTargetIds`), showing for each run: status (pending/running), scheduled or started time, target names, and source progress (e.g. X/Y sources). |
 | R-SCAN-2 | Ubiquitous | **The system shall** update the running-scans list reactively (e.g. via Convex subscription) so that when a run completes or fails, the list reflects the change without a full page reload. |
 
 ---
@@ -105,7 +108,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
 | R-TEAM-1 | Ubiquitous | **The system shall not** assign users to teams by email domain on sign-in. **The system shall** set `users.teamId` only when the user **creates a team**, **accepts a valid team invite**, or (one-off migration) via `teams.runTeamBootstrap`. |
-| R-TEAM-8 | Ubiquitous | **The system shall** expose **Team** on Settings (`/settings`): when on a team — display name (team admins: **edit and save** name), members, admin indicator, **Leave team** (with confirmation), and for team admins **invite by email**, list pending email invites (revoke). When not on a team — **pending invitations** (accept) for the signed-in email, **open invite link** (`?teamInvite=`), and **Create team** (name). **The system shall** show a short hint on Watch Targets linking to Settings when the user has no team. |
+| R-TEAM-8 | Ubiquitous | **The system shall** expose **Team** controls on Settings (`/settings`) in the **Team** tab/panel (R-NAV-6): when on a team — display name (team admins: **edit and save** name), members, admin indicator, **Leave team** (with confirmation), and for team admins **invite by email**, list pending email invites (revoke). When not on a team — **pending invitations** (accept) for the signed-in email, **open invite link** (`?teamInvite=`), and **Create team** (name). **The system shall** show a short hint on Watch Targets linking to Settings when the user has no team. |
 | R-TEAM-9 | Event-driven | **When** the user invokes **Leave team**, **the system shall** clear `teamId`, set `teamPreference` to `"solo"`, transfer `teams.ownerUserId` to another member when the leaver was owner and others remain, and remove `targetSubscriptions` for watch targets the user does not own. |
 | R-TEAM-10 | Event-driven | **When** the user invokes **Create team** with a non-empty name and has no `teamId`, **the system shall** insert a `teams` row with `ownerUserId` set to that user and patch the user’s `teamId`. **The system shall not** allow create while the user still has a `teamId` (must leave first). |
 | R-TEAM-11 | Event-driven | **When** a team admin submits a valid email to **invite teammate**, **the system shall** insert a `teamEmailInvites` row (unique token, normalized email, expiry e.g. 7 days), capped per team, reject duplicates already on the team or with a pending invite, and **schedule** `email.sendTeamInviteEmail` (Convex internal action). |
@@ -140,7 +143,10 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ---
 
-## 8. Traceability
+## 8. Traceability (arrow of intent — upward links)
 
 - **HLD:** [docs/HLD.md](HLD.md) — architecture, data flow, and operational troubleshooting summary (§8).
 - **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, APIs, environment, and **debugging / operations** (§8).
+- **Styleguide:** [docs/styleguide.md](styleguide.md) — typography, spacing, components, and **Settings page (sidebar tabs)** (layout, a11y, responsive). User-visible Settings chrome must match the styleguide and satisfy R-NAV-6 / R-NAV-7 / R-SCH-* / R-TEAM-8.
+
+Each EARS requirement should be satisfiable against LLD contracts and HLD data flow; **Settings** changes should also match the styleguide section and its traceability table. When in doubt, update HLD, LLD, EARS, and the styleguide together.

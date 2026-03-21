@@ -328,3 +328,86 @@ a {
 .source-badge[data-source="exa"]            { background: #dbeafe; color: #1e40af; }
 .source-badge[data-source="rss"]            { background: #f3e8ff; color: #6b21a8; }
 .source-badge[data-source="openfda"]        { background: #d1fae5; color: #065f46; }
+
+/* ---- Settings (sidebar tabs) ---- */
+
+.settings-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.settings-sidebar {
+  flex: 0 0 11rem;
+  min-width: 10rem;
+}
+
+.settings-tablist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  background: #f3f4f6;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+}
+
+.settings-tab {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.settings-tab:hover {
+  color: #111827;
+}
+
+.settings-tab[aria-selected="true"] {
+  background: #fff;
+  color: #111827;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.settings-panels {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    flex: none;
+    width: 100%;
+  }
+
+  .settings-tablist {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .settings-tab {
+    width: auto;
+  }
+}
