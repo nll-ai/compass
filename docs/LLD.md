@@ -20,7 +20,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
 | `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by Settings digest schedule. |
 | `lib/convexAuthQuery.ts` | `useConvexAuthQuerySkip()` — use with `useQuery(..., skip ? "skip" : {})` until `useConvexAuth()` reports authenticated, so queries don’t hang on `undefined`. |
-| `convex/watchTargets.ts` | `create` (teamId, createdByUserId, auto-subscribe creator), `listAll` (team pool + `subscribed`, `creatorLabel`), `get` / `getByIds` (same-team), `update`, `remove` (cleans subscriptions), `getByIdsInternal`. |
+| `convex/watchTargets.ts` | `create` (teamId, createdByUserId, auto-subscribe creator), `listAll` (**union** of owned `by_userId` + current team `by_teamId`, deduped; `subscribed`, `creatorLabel`), `get` / `getByIds` (same-team), `update`, `remove` (cleans subscriptions), `getByIdsInternal`. |
 | `convex/teams.ts` | `getMyTeam`, `getMyMembership`, `listTeamMembers`, `createTeam`, `renameTeam`, `leaveTeam`, `inviteTeamMemberByEmail`, `acceptTeamEmailInvite` (`token` \| `inviteId`), `listMyTeamInvites`, `listPendingTeamInvitesForMyEmail`, `revokeTeamInvite`, `getTeamEmailInviteEmailContextInternal`, `runTeamBootstrap`. |
 | `convex/targetSubscriptions.ts` | `subscribe`, `unsubscribe`, `isSubscribed`, `listMySubscribedTargetIds`, `listSubscribersForTarget`, `getSubscribedWatchTargetIdsForUserInternal`. |
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
@@ -185,8 +185,9 @@ This document specifies implementation-level details: modules, Convex functions,
 
 ## 6. Environment and configuration
 
-- **Convex env (server-side):** `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `APP_URL`, optional `MIGRATION_SECRET` for `teams.runTeamBootstrap`. Set via `npx convex env set`. Used by `email.sendDigestEmail`.
-- **Next.js env:** `SCAN_SECRET`, `NEXT_PUBLIC_APP_URL`, etc.; see `.env.example`.
+- **Convex env (server-side):** `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `APP_URL` (digest links, team invite accept links, and **must be reachable by Convex** when `callScanApi` hits `POST /api/scan`), `SCAN_SECRET` (**must match** Next.js / Vercel), optional `MIGRATION_SECRET` for `teams.runTeamBootstrap`. Set via `npx convex env set` (use **`--prod`** for production deployment).
+- **Next.js env:** `SCAN_SECRET`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_APP_URL`, WorkOS keys, etc.; see `.env.example`.
+- **Local vs remote Convex:** If `.env.local` has `CONVEX_DEPLOYMENT` starting with `local:`, the CLI/backend is local; otherwise cloud. Local Convex + local Next: `APP_URL` can be `http://localhost:3000`. Remote Convex cannot call `localhost`; use a deployed URL or tunnel.
 
 ---
 
@@ -197,3 +198,65 @@ This document specifies implementation-level details: modules, Convex functions,
 3. Action runs: load digest run, scan run, all digest items (`listByDigestRunInternal`), targets (`getByIdsInternal`).
 4. For each recipient (`digestNotifyUserIds` or first target owner): resolve `user.email`, filter items by subscription when `user.teamId` is set.
 5. If `RESEND_API_KEY` is set: POST to Resend with HTML (executive summary, per-target sections, links to `/targets/{id}/digests` and `/targets`).
+
+---
+
+## 8. Debugging and operations
+
+### 8.1 Convex logs (scheduled scan bridge)
+
+From the repo root:
+
+```bash
+npx convex logs --history 100
+# Production deployment:
+npx convex logs --prod --history 200
+npx convex env list --prod
+npx convex dashboard --prod
+```
+
+Interpret:
+
+| Observation | Likely cause |
+|---------------|----------------|
+| No `scans:callScanApi` near the scheduled time | Cron not running, or `checkAndTrigger` / schedule slot / timezone mismatch. |
+| `callScanApi: APP_URL or SCAN_SECRET not set` | Set both in Convex env for that deployment. |
+| `callScanApi failed: 401` | `SCAN_SECRET` differs between Convex and Next.js. |
+| `callScanApi failed: 500` | Next.js `/api/scan` threw — see §8.2. |
+
+### 8.2 Next.js `/api/scan` errors
+
+Generic 500 bodies are normal; the **root cause** is logged server-side:
+
+- **Local:** Terminal running `npm run dev` — search for **`[POST /api/scan] error:`** and stack.
+- **Vercel:** Project → Logs / Functions — same string.
+
+### 8.3 Local vs remote matrix
+
+| Scenario | Where Convex runs | `APP_URL` in Convex | Where to read Next error |
+|----------|-------------------|------------------------|---------------------------|
+| Local Convex + local Next | Your machine | `http://localhost:3000` | `npm run dev` terminal |
+| Remote Convex + deployed Next | Cloud | `https://…` (your app) | Vercel (or host) logs |
+| Remote Convex + local Next | Cloud | Public URL to your machine (e.g. tunnel) | Local terminal |
+
+### 8.4 `sendDigestEmail` log messages (prod)
+
+After a digest is created, search logs for **`email:sendDigestEmail`**:
+
+| Log | Meaning |
+|-----|--------|
+| `sendDigestEmail: started` | Action entered. |
+| `RESEND_API_KEY not set, skipping` | Set key on this deployment. |
+| `digest run not found, skipping` | Bad id or deleted row. |
+| `no scan run or targetIds, skipping` | Scan run missing or empty. |
+| `no target or userId` / `no user or user email` | Data / WorkOS sync issue. |
+| `sending` → `sent successfully` | Resend accepted. |
+| `Resend API error` | Non-2xx from Resend; body in log. |
+
+### 8.5 Deploy / API mismatch
+
+**`Could not find public function for 'scans:listRunning'`** (or similar) → Production Convex schema/functions behind the app. Deploy Convex (`npx convex deploy`, or CI hook); see README / Vercel build notes if applicable.
+
+### 8.6 Watch targets list empty (data still present)
+
+If the hub is empty but direct `/targets/{id}` works for owned targets, historical cause was **list** logic using only `by_teamId` when the user had a `teamId` that did not match `watchTargets.teamId` on owned rows. **Current behavior:** `listAll` unions **owned** + **current team** (see §2.1). Optional: backfill `watchTargets.teamId` for sharing.

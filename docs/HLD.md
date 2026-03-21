@@ -1,6 +1,6 @@
 # Compass — High-Level Design (HLD)
 
-This document describes the high-level architecture of Compass: major components, data flow, and integration points. It is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)).
+This document describes the high-level architecture of Compass: major components, data flow, and integration points. It is kept in sync with the codebase when changes are requested (see [AGENTS.md](../AGENTS.md)). Historical scaffold / phase notes may appear under [`docs/plans/`](plans/).
 
 ---
 
@@ -67,7 +67,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ### 3.4 Teams and subscriptions
 
-- **No domain auto-team:** Sign-in does **not** assign `teamId`. Users join a workspace by **creating a team** (they become `ownerUserId` / admin) or **accepting an invite code** from Settings. Optional `teams.runTeamBootstrap` (with `MIGRATION_SECRET`) can still backfill domain-based teams for legacy data.
+- **No domain auto-team:** Sign-in does **not** assign `teamId`. Users join a workspace by **creating a team** (they become `ownerUserId` / admin) or **accepting an email invite** from Settings. Optional `teams.runTeamBootstrap` (with `MIGRATION_SECRET`) can still backfill domain-based teams for legacy data.
 - **Settings → Team:** **Create team**, **Invite teammate by email** (admins; Resend email with accept link when configured), **Rename team** (admins only), **Leave team** (ownership transfers to another member when possible). Pending invites stored in `teamEmailInvites` (token, normalized email, TTL); recipients accept via link (`/settings?teamInvite=`) or **Pending invitations** on Settings when signed in with the invited email.
 - Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
 - Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans.
@@ -93,7 +93,9 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 - **Event-driven side effects:** Domain events (e.g. digest created) trigger downstream work via Convex scheduler or internal actions, not inline in the same mutation or API handler. See AGENTS.md § Event-driven side effects.
 - **Auth and scoping:** Convex queries/mutations use `getUserIdFromIdentity` / `getOrCreateUserId` plus `userOwnsTarget` / `getVisibleWatchTargetIds` for same-team access. Crons and email resolve recipients via `digestNotifyUserIds`, subscriptions, and target ownership.
-- **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL` are set in Convex (e.g. `npx convex env set`), not in Next.js `.env.local`.
+- **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL`, and **`SCAN_SECRET`** (must match Next.js) are set in Convex (e.g. `npx convex env set`). **`APP_URL`** must be a URL Convex can reach when calling `POST /api/scan` (deployed app or tunnel for remote Convex + local Next).
+- **Digest synthesis (product intent):** Keep synthesis concise and factual; group related source records into one signal when appropriate; calibrate significance (`critical` / `high` / `medium` / `low`); avoid generic “strategic implication” text unless specific; track token/cost where implemented.
+- **Risks (design):** API rate limits → backoff and source health; high item volume → cap inputs or staged synthesis; dedup false positives → compare meaningful fields for “changed”; long-running scans → isolated per-source work and runtime budgets.
 
 ---
 
@@ -133,3 +135,29 @@ flowchart TB
   Digests -->|scheduler.runAfter| EmailAction
   EmailAction -->|fetch| Resend
 ```
+
+---
+
+## 8. Operational troubleshooting (summary)
+
+Detailed CLI commands and log line references live in **LLD §8**. Use this section as a mental model.
+
+### 8.1 Scheduled scans and `POST /api/scan`
+
+- **Convex logs** (`npx convex logs`, optionally `--prod` for production deployment) show whether the cron ran, `scans:callScanApi` was invoked, and HTTP status from your app.
+- **Missing `APP_URL` or `SCAN_SECRET` in Convex** → Convex never successfully calls Next.js; set both in Convex env; **`SCAN_SECRET`** must match Next.js / Vercel.
+- **`callScanApi` 401** → secret mismatch between Convex and Next.js.
+- **`callScanApi` 500** → Next.js threw; the real message is in the **Next.js** process (terminal running `npm run dev` or **Vercel function logs**), typically a line like `[POST /api/scan] error:`.
+- **Nothing runs at the chosen time** → Confirm a **`userDigestSchedule`** row for the user, timezone/slot, and (team mode) **subscribed** active targets or (solo) owned active targets.
+
+### 8.2 Digest email (production)
+
+- Ensure **`RESEND_API_KEY`**, **`RESEND_FROM_EMAIL`**, and **`APP_URL`** are set on the **same Convex deployment** the app uses (`npx convex env list --prod`). Inspect **`email:sendDigestEmail`** in logs for `started`, `skipping`, `sending`, `sent successfully`, or `Resend API error` (see LLD §8 table).
+
+### 8.3 “Watch targets disappeared”
+
+- Usually **not** data loss: after team changes, **`watchTargets.listAll`** intentionally returns the **union** of targets you **own** (`userId`) and your **current team pool** (`teamId`), so owned rows with a **stale** `teamId` still appear. Detail pages could still work earlier via `userOwnsTarget` when the list was wrong; behavior is aligned with **`getVisibleWatchTargetIds`**. Optional hygiene: patch `watchTargets.teamId` to the current team for sharing with teammates.
+
+### 8.4 Slack digest (when enabled)
+
+- Block Kit messages typically include a header (daily/weekly), executive summary, per-item blocks (significance, category, headline, synthesis, sources), optional strategic callout, and actions to open the full digest / settings in the web app.

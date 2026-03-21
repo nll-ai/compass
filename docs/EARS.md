@@ -79,6 +79,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-DIG-6 | Unwanted behavior | **The system shall not** block or fail digest creation if the email send fails; email delivery is best-effort. |
 | R-DIG-7 | Ubiquitous | **The system shall** trigger the email send asynchronously (e.g. via Convex scheduler) so that the mutation that creates the digest does not wait on the email. |
 | R-DIG-8 | Ubiquitous | **The system shall** send a **combined digest email** when a scan run covers multiple watch targets: HTML body with executive summary (omitted for team-filtered recipients when they have no matching digest items), per-target sections (significance, category, headline, short synthesis), links to `/targets/{id}/digests` and `/targets` (URLs validated for `href`). **When** `scanRuns.digestNotifyUserIds` is set, **the system shall** send one message per listed user (deduplicated by user id), filtering digest items to that user’s subscribed targets when the user has a `teamId`. |
+| R-DIG-9 | Ubiquitous | **The system shall** keep digest synthesis **concise and factual**, calibrate significance into meaningful tiers, **merge related source records into one signal** when appropriate, and **omit or down-rank generic “strategic implication”** text unless the output is specific and material. |
 
 ---
 
@@ -116,6 +117,7 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 | R-TEAM-3 | Ubiquitous | **The system shall** expose `targetSubscriptions` (subscribe / unsubscribe / list) so a user can opt into team watch targets for digests and scheduled scans. |
 | R-TEAM-4 | Ubiquitous | **The system shall** list team watch targets on `/targets` with an “In digest” control, sections for subscribed vs other team targets when the user has a team, and optional “Added by {creator}” from `createdByUserId`. |
 | R-TEAM-5 | Ubiquitous | **The system shall** scope visibility of targets, scans, digests, and raw items to **owned** or **same-team** targets (`userOwnsTarget` / `getVisibleWatchTargetIds`). |
+| R-TEAM-5a | Ubiquitous | **The system shall** populate the Watch Targets hub list (`watchTargets.listAll`) as the **deduped union** of (a) all watch targets the user owns (`userId`) and (b) when the user has a `teamId`, all targets with that `teamId`, so owned targets remain visible if `watchTargets.teamId` is stale or unset relative to the user’s current team. |
 | R-TEAM-6 | Ubiquitous | **The system shall** run the global digest cron using **subscribed** active targets for team users (and owned active targets when not on a team or without subscriptions); **when** multiple users in the same team share the same local schedule slot, **the system shall** merge into one `scheduleScan` with combined `targetIds` and `digestNotifyUserIds`. Users **without** a `teamId` **shall not** be merged with other accounts at the same slot (per-user grouping). |
 | R-TEAM-7 | Optional feature | **If** `MIGRATION_SECRET` is set in Convex env, **the system shall** provide `teams.runTeamBootstrap` (mutation with matching `secret` arg) to backfill teams, `teamId` on users and targets, and owner subscriptions for one-time deploy. |
 
@@ -140,5 +142,5 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 
 ## 8. Traceability
 
-- **HLD:** [docs/HLD.md](HLD.md) — architecture and data flow for these features.
-- **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, and APIs that implement these requirements.
+- **HLD:** [docs/HLD.md](HLD.md) — architecture, data flow, and operational troubleshooting summary (§8).
+- **LLD:** [docs/LLD.md](LLD.md) — modules, Convex functions, APIs, environment, and **debugging / operations** (§8).
