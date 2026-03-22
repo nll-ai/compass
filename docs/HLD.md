@@ -87,7 +87,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 - **No domain auto-team:** Sign-in does **not** assign `teamId`. Users join a workspace by **creating a team** (they become `ownerUserId` / admin) or **accepting an email invite** from Settings. Optional `teams.runTeamBootstrap` (with `MIGRATION_SECRET`) can still backfill domain-based teams for legacy data.
 - **Settings → Team:** **Create team**, **Invite teammate by email** (admins; Resend email with accept link when configured), **Rename team** (admins only), **Leave team** (ownership transfers to another member when possible). Pending invites stored in `teamEmailInvites` (token, normalized email, TTL); recipients accept via link (`/settings?teamInvite=`) or **Pending invitations** on Settings when signed in with the invited email.
 - Watch targets created while on a team get `teamId` and `createdByUserId`; the creator is auto-subscribed in `targetSubscriptions`.
-- Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans.
+- Teammates see all team targets on `/targets`, toggle **In digest** to subscribe, and receive filtered combined emails from shared multi-target scans. **Ownership:** the row’s `userId` is the only account that may edit or delete that target; others are viewers/subscribers. Legacy rows with a missing `userId` or `createdByUserId` may be backfilled via `watchTargets.backfillWatchTargetOwnership` (`MIGRATION_SECRET`).
 
 ### 4.5 Raw-item summaries (timeline and overlay)
 
@@ -109,7 +109,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 ## 6. Non-functional and cross-cutting
 
 - **Event-driven side effects:** Domain events (e.g. digest created) trigger downstream work via Convex scheduler or internal actions, not inline in the same mutation or API handler. See AGENTS.md § Event-driven side effects.
-- **Auth and scoping:** Convex queries/mutations use `getUserIdFromIdentity` / `getOrCreateUserId` plus `userOwnsTarget` / `getVisibleWatchTargetIds` for same-team access. Crons and email resolve recipients via `digestNotifyUserIds`, subscriptions, and target ownership.
+- **Auth and scoping:** Convex queries/mutations use `getUserIdFromIdentity` / `getOrCreateUserId` plus `canViewWatchTarget` (see same team) / `getVisibleWatchTargetIds` for visibility. **Watch target writes** (`watchTargets.update` / `remove`) require **`isWatchTargetOwner`** (`userId` on the row). Crons and email resolve recipients via `digestNotifyUserIds`, subscriptions, and target ownership.
 - **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL`, and **`SCAN_SECRET`** (must match Next.js) are set in Convex (e.g. `npx convex env set`). **`APP_URL`** must be a URL Convex can reach when calling `POST /api/scan` (deployed app or tunnel for remote Convex + local Next).
 - **Digest synthesis (product intent):** Keep synthesis concise and factual; group related source records into one signal when appropriate; calibrate significance (`critical` / `high` / `medium` / `low`); avoid generic “strategic implication” text unless specific; track token/cost where implemented.
 - **Risks (design):** API rate limits → backoff and source health; high item volume → cap inputs or staged synthesis; dedup false positives → compare meaningful fields for “changed”; long-running scans → isolated per-source work and runtime budgets.
@@ -179,7 +179,7 @@ Detailed CLI commands and log line references live in **LLD §8**. Use this sect
 
 ### 8.3 “Watch targets disappeared”
 
-- Usually **not** data loss: after team changes, **`watchTargets.listAll`** intentionally returns the **union** of targets you **own** (`userId`) and your **current team pool** (`teamId`), so owned rows with a **stale** `teamId` still appear. Detail pages could still work earlier via `userOwnsTarget` when the list was wrong; behavior is aligned with **`getVisibleWatchTargetIds`**. Optional hygiene: patch `watchTargets.teamId` to the current team for sharing with teammates.
+- Usually **not** data loss: after team changes, **`watchTargets.listAll`** intentionally returns the **union** of targets you **own** (`userId`) and your **current team pool** (`teamId`), so owned rows with a **stale** `teamId` still appear. Detail pages align with **`getVisibleWatchTargetIds`** / **`canViewWatchTarget`**. Optional hygiene: patch `watchTargets.teamId` to the current team for sharing with teammates.
 
 ### 8.4 Slack digest (when enabled)
 

@@ -130,6 +130,11 @@ export default function TargetDetailPage() {
       {target.type === "person" && target.affiliation && (
         <p className="muted" style={{ margin: 0 }}>{target.affiliation}</p>
       )}
+      {!target.viewerCanEdit && (
+        <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }} role="status">
+          Only the owner can edit or delete this watch target. You can still run scans and explore signals.
+        </p>
+      )}
 
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
         <ScanButton
@@ -175,6 +180,7 @@ export default function TargetDetailPage() {
         )}
       </div>
 
+      {target.viewerCanEdit ? (
       <section className="card stack">
         <button
           type="button"
@@ -331,6 +337,7 @@ export default function TargetDetailPage() {
       </form>
         )}
       </section>
+      ) : null}
 
       <section className="card stack" aria-labelledby="digest-scheduling-heading">
         <h2 id="digest-scheduling-heading" style={{ margin: 0, fontSize: "1rem" }}>
@@ -551,6 +558,7 @@ export default function TargetDetailPage() {
         )}
       </section>
 
+      {target.viewerCanEdit ? (
       <section className="card stack" style={{ borderColor: "var(--color-error, #b91c1c)", borderWidth: 1 }}>
         <h2 style={{ margin: 0, fontSize: "1rem" }}>Delete watch target</h2>
         <p className="muted" style={{ margin: 0 }}>
@@ -601,6 +609,7 @@ export default function TargetDetailPage() {
           {deleting ? "Deleting…" : "Delete watch target"}
         </button>
       </section>
+      ) : null}
     </div>
   );
 }

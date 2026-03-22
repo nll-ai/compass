@@ -5,7 +5,7 @@ import {
   getOrCreateUserId,
   getUserIdFromIdentity,
   userOwnsDigestRun,
-  userOwnsTarget,
+  canViewWatchTarget,
 } from "./lib/auth";
 
 export const listByDigestRun = query({
@@ -30,11 +30,11 @@ export const listByDigestRunInternal = internalQuery({
   },
 });
 
-/** List signals (digest items) for a watch target across all digest runs, newest first. Caller must own the target. */
+/** List signals (digest items) for a watch target across all digest runs, newest first. Caller must be able to view the target (`canViewWatchTarget`). */
 export const listByWatchTarget = query({
   args: { watchTargetId: v.id("watchTargets"), limit: v.optional(v.number()) },
   handler: async (ctx, { watchTargetId, limit = 60 }) => {
-    if (!(await userOwnsTarget(ctx, watchTargetId))) return [];
+    if (!(await canViewWatchTarget(ctx, watchTargetId))) return [];
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -61,7 +61,7 @@ export const setFeedback = mutation({
     const item = await ctx.db.get(digestItemId);
     if (!item) throw new Error("Not found");
     const userId = await getOrCreateUserId(ctx);
-    if (!(await userOwnsTarget(ctx, item.watchTargetId))) throw new Error("Unauthorized");
+    if (!(await canViewWatchTarget(ctx, item.watchTargetId))) throw new Error("Unauthorized");
     const now = Date.now();
     await ctx.db.patch(digestItemId, { feedback, feedbackAt: now });
     if (item) {

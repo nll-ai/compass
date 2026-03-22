@@ -14,7 +14,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/digest/[id]/page.tsx` | Digest detail: list `digestItems`, `SignalOverlay` for **View** on a signal (`components/compass/SignalOverlay.tsx`). Overlay: portal to `document.body`, slide-out panel + dimmed backdrop; on close, exit animation must clear (`transitionend` on panel `transform`, 400ms fallback) so `body` scroll lock is removed; while exiting, `pointer-events: none` on shell/backdrop/panel so opacity-0 layers do not block the page. |
-| `app/targets/[id]/page.tsx` | Target detail: run scan, edit target, **Automatic digest timing** card (link to Settings), insights links, source links, signal reports, delete. |
+| `app/targets/[id]/page.tsx` | Target detail: run scan; **edit** / **delete** only when `viewerCanEdit` from `watchTargets.get`; **Automatic digest timing** card (link to Settings), insights links, source links, signal reports. |
 | `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
 | `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
 | `app/history/page.tsx` | Legacy redirect to `/targets`. |
@@ -24,7 +24,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
 | `lib/formatSchedule.ts` | `formatSchedule(schedule)` and `COMMON_TIMEZONES`; used by Settings digest schedule. |
 | `lib/convexAuthQuery.ts` | `useConvexAuthQuerySkip()` — use with `useQuery(..., skip ? "skip" : {})` until `useConvexAuth()` reports authenticated, so queries don’t hang on `undefined`. |
-| `convex/watchTargets.ts` | `create` (teamId, createdByUserId, auto-subscribe creator), `listAll` (**union** of owned `by_userId` + current team `by_teamId`, deduped; `subscribed`, `creatorLabel`), `get` / `getByIds` (same-team), `update`, `remove` (cleans subscriptions), `getByIdsInternal`. |
+| `convex/watchTargets.ts` | `create` (teamId, createdByUserId, auto-subscribe creator), `listAll` (**union** of owned `by_userId` + current team `by_teamId`, deduped; `subscribed`, `creatorLabel`, **`viewerCanEdit`**), `get` (extends doc with **`viewerCanEdit`**; visibility `canViewWatchTarget`), `getByIds` (visibility), `update` / `remove` (**`isWatchTargetOwner`** only), `backfillWatchTargetOwnership` (`MIGRATION_SECRET`: sync `userId` ↔ `createdByUserId`), `getByIdsInternal`. |
 | `convex/teams.ts` | `getMyTeam`, `getMyMembership`, `listTeamMembers`, `createTeam`, `renameTeam`, `leaveTeam`, `inviteTeamMemberByEmail`, `acceptTeamEmailInvite` (`token` \| `inviteId`), `listMyTeamInvites`, `listPendingTeamInvitesForMyEmail`, `revokeTeamInvite`, `getTeamEmailInviteEmailContextInternal`, `runTeamBootstrap`. |
 | `convex/targetSubscriptions.ts` | `subscribe`, `unsubscribe`, `isSubscribed`, `listMySubscribedTargetIds`, `listSubscribersForTarget`, `getSubscribedWatchTargetIdsForUserInternal`. |
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
@@ -35,8 +35,8 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/users.ts` | `getUserById` (internal). |
 | `convex/email.ts` | `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
 | `convex/scans.ts` | `listRunning`, `listRecent`, `listScanHistory` (visible targets: **completed** / **failed** only; filter + sort by `completedAt` ?? `startedAt` ?? `scheduledFor`; capped read from `by_scheduledFor` then per-run `digestRuns` lookup via `by_scanRun`); `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
-| `convex/digestItems.ts` | `listByDigestRunInternal` (for email). |
-| `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, `userOwnsTarget` (same-team). No automatic team assignment on sign-in. |
+| `convex/digestItems.ts` | `listByDigestRun` (`userOwnsDigestRun`), `listByWatchTarget` / `setFeedback` (`canViewWatchTarget`), `getFeedbackWithRawContent`, `listByDigestRunInternal` (email). |
+| `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, **`canViewWatchTarget`** (same-team visibility), **`isWatchTargetOwner`** / **`watchTargetRowOwnerIs`** (row `userId` = owner for mutations), `userOwnsDigestRun`. No automatic team assignment on sign-in. |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
 
 ---
@@ -53,10 +53,16 @@ This document specifies implementation-level details: modules, Convex functions,
 
 - **watchTargets.get** (query)  
   Args: `{ id: string }`.  
-  Returns: watch target doc or null (auth: must own or same-team target).
+  Returns: watch target document plus **`viewerCanEdit`** (`true` when current user’s id equals `userId`), or null (auth: `canViewWatchTarget` — own row or same team).
 
 - **watchTargets.listAll** (query)  
-  Returns: **union** of targets you own (`userId`) and, when `user.teamId` is set, targets in that team (`teamId`), deduped — so owned targets with a stale/missing `teamId` still appear after team changes. Each row includes `subscribed` and optional `creatorLabel`.
+  Returns: **union** of targets you own (`userId`) and, when `user.teamId` is set, targets in that team (`teamId`), deduped — so owned targets with a stale/missing `teamId` still appear after team changes. Each row includes `subscribed`, optional `creatorLabel`, and **`viewerCanEdit`**.
+
+- **watchTargets.update** / **watchTargets.remove** (mutations)  
+  Auth: **`isWatchTargetOwner`** only (row `userId` matches caller).
+
+- **watchTargets.backfillWatchTargetOwnership** (mutation)  
+  Args: `{ secret }` matching Convex **`MIGRATION_SECRET`**. Patches legacy rows: set `userId` from `createdByUserId` when `userId` is missing, and `createdByUserId` from `userId` when `createdByUserId` is missing. Returns counts and **`stillOrphanIds`** when both fields remain null.
 
 ### 2.2 Scans (run visibility and status)
 

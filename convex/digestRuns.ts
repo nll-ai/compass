@@ -2,7 +2,12 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds, userOwnsTarget } from "./lib/auth";
+import {
+  canViewWatchTarget,
+  getOrCreateUserId,
+  getUserIdFromIdentity,
+  getVisibleWatchTargetIds,
+} from "./lib/auth";
 
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
@@ -89,7 +94,7 @@ export const listSignalReportsForTarget = query({
   handler: async (ctx, { watchTargetId, limit = 20 }) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return [];
-    if (!(await userOwnsTarget(ctx, watchTargetId))) return [];
+    if (!(await canViewWatchTarget(ctx, watchTargetId))) return [];
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -107,7 +112,7 @@ export const getLatestForTarget = query({
   handler: async (ctx, { watchTargetId }) => {
     const userId = await getUserIdFromIdentity(ctx);
     if (!userId) return null;
-    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
+    if (!(await canViewWatchTarget(ctx, watchTargetId))) return null;
     const items = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))

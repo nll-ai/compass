@@ -48,6 +48,7 @@ type ListTarget = {
   active: boolean;
   subscribed: boolean;
   creatorLabel?: string;
+  viewerCanEdit: boolean;
 };
 
 function TargetCard({
@@ -88,6 +89,11 @@ function TargetCard({
             {target.creatorLabel && (
               <p className="muted" style={{ margin: "0.2rem 0 0", fontSize: "0.8rem" }}>
                 Added by {target.creatorLabel}
+              </p>
+            )}
+            {!target.viewerCanEdit && (
+              <p className="muted" style={{ margin: "0.2rem 0 0", fontSize: "0.8rem" }} aria-label="View only">
+                View only — owner can edit or delete
               </p>
             )}
           </div>
@@ -329,6 +335,7 @@ export default function TargetsPage() {
     active: t.active,
     subscribed: t.subscribed,
     creatorLabel: t.creatorLabel,
+    viewerCanEdit: t.viewerCanEdit,
   }));
   const inDigest = listTargets.filter((t) => t.subscribed);
   const notInDigest = listTargets.filter((t) => !t.subscribed);

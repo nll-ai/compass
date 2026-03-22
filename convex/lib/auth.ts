@@ -1,5 +1,5 @@
 import type { GenericQueryCtx, GenericMutationCtx } from "convex/server";
-import type { DataModel } from "../_generated/dataModel";
+import type { DataModel, Doc } from "../_generated/dataModel";
 import type { Id } from "../_generated/dataModel";
 
 type QueryCtx = GenericQueryCtx<DataModel>;
@@ -80,11 +80,36 @@ export async function requireIdentity(ctx: AnyCtx) {
 }
 
 /**
- * Returns true if the current user owns the given watch target.
+ * True if `userId` is the row owner (`watchTargets.userId`). Use for update/delete authorization.
  */
-export async function userOwnsTarget(
-  ctx: QueryCtx,
-  watchTargetId: import("../_generated/dataModel").Id<"watchTargets">,
+export function watchTargetRowOwnerIs(
+  userId: Id<"users"> | null | undefined,
+  target: Pick<Doc<"watchTargets">, "userId"> | null | undefined,
+): boolean {
+  if (!userId || !target?.userId) return false;
+  return target.userId === userId;
+}
+
+/**
+ * True if the current user is the owner of the watch target (`userId` on the document).
+ * Only owners may update or delete the target.
+ */
+export async function isWatchTargetOwner(
+  ctx: AnyCtx,
+  watchTargetId: Id<"watchTargets">,
+): Promise<boolean> {
+  const userId = await getUserIdFromIdentity(ctx);
+  if (!userId) return false;
+  const target = await ctx.db.get(watchTargetId);
+  return watchTargetRowOwnerIs(userId, target);
+}
+
+/**
+ * True if the current user may see this watch target (owns the row, or same team).
+ */
+export async function canViewWatchTarget(
+  ctx: AnyCtx,
+  watchTargetId: Id<"watchTargets">,
 ): Promise<boolean> {
   const userId = await getUserIdFromIdentity(ctx);
   if (!userId) return false;
@@ -96,9 +121,6 @@ export async function userOwnsTarget(
   return false;
 }
 
-/**
- * Returns true if the current user owns the digest run (via its scan run's targetIds).
- */
 /** Watch targets the user may see: owned plus same-team (when teamId set). */
 export async function getVisibleWatchTargetIds(
   ctx: AnyCtx,

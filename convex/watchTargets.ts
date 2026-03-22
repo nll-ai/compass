@@ -1,8 +1,13 @@
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { getOrCreateUserId, getUserIdFromIdentity, userOwnsTarget } from "./lib/auth";
+import {
+  canViewWatchTarget,
+  getOrCreateUserId,
+  getUserIdFromIdentity,
+  isWatchTargetOwner,
+} from "./lib/auth";
 
 export const listActive = query({
   args: {},
@@ -41,7 +46,7 @@ export const listAll = query({
     /**
      * Union of (1) targets you created (`userId`) and (2) team pool (`teamId` = your current team).
      * After team membership changes, owned rows may still carry an old or missing `teamId`; listing only
-     * by_teamId would hide them. Aligns with `getVisibleWatchTargetIds` / `userOwnsTarget`.
+     * by_teamId would hide them. Aligns with `getVisibleWatchTargetIds` / `canViewWatchTarget`.
      */
     const owned = await ctx.db
       .query("watchTargets")
@@ -64,7 +69,11 @@ export const listAll = query({
       .collect();
     const subSet = new Set(subs.map((s) => s.watchTargetId));
     const out: Array<
-      Doc<"watchTargets"> & { subscribed: boolean; creatorLabel?: string }
+      Doc<"watchTargets"> & {
+        subscribed: boolean;
+        creatorLabel?: string;
+        viewerCanEdit: boolean;
+      }
     > = [];
     for (const t of targets) {
       let creatorLabel: string | undefined;
@@ -75,10 +84,12 @@ export const listAll = query({
           creatorLabel = name.length > 0 ? name : cu.email;
         }
       }
+      const viewerCanEdit = t.userId === userId;
       out.push({
         ...t,
         subscribed: subSet.has(t._id),
         creatorLabel,
+        viewerCanEdit,
       });
     }
     return out;
@@ -88,12 +99,15 @@ export const listAll = query({
 export const get = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return null;
     const watchTargetId = ctx.db.normalizeId("watchTargets", id);
     if (watchTargetId === null) return null;
     const doc = await ctx.db.get(watchTargetId);
     if (!doc) return null;
-    if (!(await userOwnsTarget(ctx, watchTargetId))) return null;
-    return doc;
+    if (!(await canViewWatchTarget(ctx, watchTargetId))) return null;
+    const viewerCanEdit = doc.userId === userId;
+    return { ...doc, viewerCanEdit };
   },
 });
 
@@ -105,7 +119,7 @@ export const getByIds = query({
     const results = await Promise.all(ids.map((id) => ctx.db.get(id)));
     const out: NonNullable<(typeof results)[number]>[] = [];
     for (const doc of results) {
-      if (doc && (await userOwnsTarget(ctx, doc._id))) out.push(doc);
+      if (doc && (await canViewWatchTarget(ctx, doc._id))) out.push(doc);
     }
     return out;
   },
@@ -201,9 +215,9 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const { id, ...rest } = args;
-    const userId = await getOrCreateUserId(ctx);
+    await getOrCreateUserId(ctx);
     const doc = await ctx.db.get(id);
-    if (!doc || doc.userId !== userId) throw new Error("Unauthorized");
+    if (!doc || !(await isWatchTargetOwner(ctx, id))) throw new Error("Unauthorized");
     await ctx.db.patch(id, { ...rest, updatedAt: Date.now() });
     return id;
   },
@@ -213,9 +227,9 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("watchTargets") },
   handler: async (ctx, { id }) => {
-    const userId = await getOrCreateUserId(ctx);
+    await getOrCreateUserId(ctx);
     const doc = await ctx.db.get(id);
-    if (!doc || doc.userId !== userId) throw new Error("Unauthorized");
+    if (!doc || !(await isWatchTargetOwner(ctx, id))) throw new Error("Unauthorized");
     const digestItems = await ctx.db
       .query("digestItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", id))
@@ -236,6 +250,51 @@ export const remove = mutation({
 
     await ctx.db.delete(id);
     return id;
+  },
+});
+
+/**
+ * One-time backfill: set `userId` from `createdByUserId` (and vice versa) when one side is missing.
+ * Requires `MIGRATION_SECRET` matching Convex env. Run from dashboard once per deployment if needed.
+ */
+export const backfillWatchTargetOwnership = mutation({
+  args: { secret: v.string() },
+  handler: async (ctx, { secret }) => {
+    if (
+      typeof process.env.MIGRATION_SECRET !== "string" ||
+      process.env.MIGRATION_SECRET.length === 0 ||
+      secret !== process.env.MIGRATION_SECRET
+    ) {
+      throw new Error("Unauthorized");
+    }
+    const all = await ctx.db.query("watchTargets").collect();
+    const now = Date.now();
+    let patchedUserIdFromCreatedBy = 0;
+    let patchedCreatedByFromUserId = 0;
+    const stillOrphanIds: Id<"watchTargets">[] = [];
+    for (const t of all) {
+      const patch: {
+        userId?: Id<"users">;
+        createdByUserId?: Id<"users">;
+        updatedAt: number;
+      } = { updatedAt: now };
+      if (t.userId == null && t.createdByUserId != null) {
+        patch.userId = t.createdByUserId;
+        patchedUserIdFromCreatedBy++;
+      }
+      if (t.createdByUserId == null && t.userId != null) {
+        patch.createdByUserId = t.userId;
+        patchedCreatedByFromUserId++;
+      }
+      if (patch.userId !== undefined || patch.createdByUserId !== undefined) {
+        await ctx.db.patch(t._id, patch);
+      }
+      const row = await ctx.db.get(t._id);
+      if (row && row.userId == null && row.createdByUserId == null) {
+        stillOrphanIds.push(row._id);
+      }
+    }
+    return { patchedUserIdFromCreatedBy, patchedCreatedByFromUserId, stillOrphanIds };
   },
 });
 
