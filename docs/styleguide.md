@@ -380,7 +380,7 @@ When changing Settings layout or tab behavior, update **this section**, **EARS**
 - **Layout:** Reuses **Settings** classes: `.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels` (see `app/globals.css`). Same flex row, sidebar width, responsive column + horizontal tab wrap at `max-width: 720px`, and tab focus ring as Settings.
 - **Page chrome:** `<main class="stack" aria-label="Watch targets">`, `<h1>Watch Targets</h1>`, muted subtitle. Optional **no-team** card (link to Settings) stays **above** the tab layout so it stays full width.
 - **Tabs:** `nav.settings-sidebar` with `aria-label="Watch targets sections"`. `.settings-tablist` has `role="tablist"` and `aria-orientation="vertical"` (wide viewports). Tabs: **`Targets`** / **`Recent scans`** — `role="tab"`, stable ids `targets-tab-main` / `targets-tab-history`, `aria-selected`, `aria-controls` → `targets-panel-main` / `targets-panel-history`. Panels: `role="tabpanel"`, `aria-labelledby` matching tab id, `hidden` when inactive. Default selected tab: **Targets** (`activeTab === "main"`).
-- **Panels:** **Targets** — scan success/error (from manual scans), **+ Add Watch Target**, then **In your digest** and **Team-wide targets** (team mode) or **Watch targets** (solo), then **Running scans** when non-empty. Do not put `.stack` on the same element as `role="tabpanel"` and `[hidden]` without the `.stack[hidden]` override in `globals.css`. **Recent scans** — **only** `listScanHistory` (month groups, completed/failed rows, View digest); empty states when there are no targets or no history yet.
+- **Panels:** **Targets** — scan success/error (from manual scans), **+ Add Watch Target**, then **In your digest** and **Team-wide targets** (team mode) or **Watch targets** (solo), then **Running scans** when non-empty. Do not put `.stack` on the same element as `role="tabpanel"` and `[hidden]` without the `.stack[hidden]` override in `globals.css`. **Recent scans** — **only** `listScanHistory` (month groups, completed/failed rows, **View digest** when present, **Re-run** on failed rows with targets — `.link` + `.link-as-button` for the action); stale row error text hidden after Re-run starts (restored if the request fails); inline success/error for retry; empty states when there are no targets or no history yet.
 - **Data loading:** `scans.listScanHistory` runs only when the **Recent scans** tab is selected and the user has at least one watch target (avoids loading history on the default tab).
 - **Ownership (team mode):** Hub cards may show a muted **View only — owner can edit or delete** line when `viewerCanEdit` is false from `watchTargets.listAll`. Target detail (`/targets/[id]`) hides edit/delete for non-owners and shows a short status line; see R-TEAM-16.
 
@@ -388,7 +388,7 @@ When changing Settings layout or tab behavior, update **this section**, **EARS**
 
 | Layer | Where | What |
 |-------|--------|------|
-| **EARS** | `docs/EARS.md` | R-SCAN-6 (Recent scans tab + default tab), R-SCAN-1 (running scans on hub), R-TEAM-16 (owner vs viewer; `viewerCanEdit`) |
+| **EARS** | `docs/EARS.md` | R-SCAN-6 / R-SCAN-7 (Recent scans tab + default tab; retry failed), R-SCAN-1 (running scans on hub), R-TEAM-16 (owner vs viewer; `viewerCanEdit`) |
 | **HLD** | `docs/HLD.md` §4.2 | Watch Targets hub schematic + scan history |
 | **LLD** | `docs/LLD.md` §1 | `app/targets/page.tsx`, shared settings tab classes in `app/globals.css` |
 | **Style (this doc)** | §6 Watch Targets | Layout, roles, responsive — mirror Settings §6 |

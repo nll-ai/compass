@@ -134,6 +134,19 @@ a {
   text-decoration: underline;
 }
 
+.link-as-button {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+.link-as-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @keyframes scan-spin {
   to {
     transform: rotate(360deg);

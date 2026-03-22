@@ -9,6 +9,44 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { ScanButton } from "@/components/compass/ScanButton";
 import { formatDate, executiveSummarySnippet } from "@/lib/formatters";
 
+type ManualScanResponse =
+  | { ok: true; totalFound: number; newFound: number }
+  | { ok: false; error: string };
+
+async function postManualComprehensiveScan(
+  period: "daily" | "weekly",
+  targetIds: Id<"watchTargets">[],
+): Promise<ManualScanResponse> {
+  const res = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      period,
+      targetIds,
+      mode: "comprehensive",
+    }),
+  });
+  const text = await res.text();
+  let data: { ok?: boolean; error?: string; totalFound?: number; newFound?: number };
+  try {
+    data = text ? (JSON.parse(text) as typeof data) : {};
+  } catch {
+    data = { error: text.startsWith("<") ? "Unexpected response (redirect?)" : text };
+  }
+  if (!res.ok || data.error) {
+    return { ok: false, error: data.error ?? res.statusText ?? `HTTP ${res.status}` };
+  }
+  if (!data.ok || typeof data.totalFound !== "number") {
+    return { ok: false, error: "Unexpected response from scan" };
+  }
+  return {
+    ok: true,
+    totalFound: data.totalFound,
+    newFound: typeof data.newFound === "number" ? data.newFound : 0,
+  };
+}
+
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
@@ -222,31 +260,15 @@ function TargetListSection({
               setScanSuccess(null);
               setScanningIds((prev) => new Set(prev).add(t._id));
               try {
-                const res = await fetch("/api/scan", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify({
-                    period: "daily",
-                    targetIds: [t._id],
-                    mode: "comprehensive",
-                  }),
-                });
-                const text = await res.text();
-                let data: { ok?: boolean; error?: string; totalFound?: number; newFound?: number };
-                try {
-                  data = text ? (JSON.parse(text) as typeof data) : {};
-                } catch {
-                  data = { error: text.startsWith("<") ? "Unexpected response (redirect?)" : text };
-                }
-                if (!res.ok || data.error) {
-                  setScanError(data.error ?? res.statusText ?? `HTTP ${res.status}`);
-                } else if (data.ok && typeof data.totalFound === "number") {
-                  const n = typeof data.newFound === "number" ? data.newFound : 0;
+                const result = await postManualComprehensiveScan("daily", [t._id]);
+                if (!result.ok) {
+                  setScanError(result.error);
+                } else {
+                  const n = result.newFound;
                   setScanSuccess(
                     n > 0
-                      ? `${t.displayName}: ${data.totalFound} items found, ${n} new. Digest updated.`
-                      : `${t.displayName}: ${data.totalFound} items found, 0 new.`
+                      ? `${t.displayName}: ${result.totalFound} items found, ${n} new. Digest updated.`
+                      : `${t.displayName}: ${result.totalFound} items found, 0 new.`,
                   );
                   setTimeout(() => setScanSuccess(null), 8000);
                 }
@@ -287,6 +309,13 @@ export default function TargetsPage() {
   const [dismissingRunId, setDismissingRunId] = useState<Id<"scanRuns"> | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
+  const [historyRetryRunId, setHistoryRetryRunId] = useState<Id<"scanRuns"> | null>(null);
+  const [historyScanError, setHistoryScanError] = useState<string | null>(null);
+  const [historyScanSuccess, setHistoryScanSuccess] = useState<string | null>(null);
+  /** Failed rows keep `error` in Convex forever; hide it on this row after user starts Re-run (restore if the request fails). */
+  const [historyRowErrorDismissed, setHistoryRowErrorDismissed] = useState<Set<Id<"scanRuns">>>(
+    () => new Set(),
+  );
 
   if (convexAuthLoading) {
     return (
@@ -578,18 +607,28 @@ export default function TargetsPage() {
             ) : (
               <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Recent scans">
                 <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Recent scans</h2>
+                {historyScanError ? (
+                  <p style={{ color: "var(--error, #b91c1c)", margin: 0, fontSize: "0.9rem" }} role="alert">
+                    {historyScanError}
+                  </p>
+                ) : null}
+                {historyScanSuccess ? (
+                  <p style={{ color: "var(--success, #059669)", margin: 0, fontSize: "0.9rem" }} role="status">
+                    {historyScanSuccess}
+                  </p>
+                ) : null}
                 {scanHistory === undefined ? (
                   <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }} role="status">
                     Loading scan history…
                   </p>
                 ) : scanHistory.length === 0 ? (
                   <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
-                    No completed scans yet. Run a scan from a target card on the Targets tab.
+                    No scan history yet. Run a scan from a target card on the Targets tab.
                   </p>
                 ) : (
                   <>
                     <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
-                      Completed and failed runs for your watch targets, newest first. Open a digest when one was generated for that run.
+                      Completed and failed runs for your watch targets, newest first. Open a digest when one was generated for that run. On a failed row, Re-run starts a new comprehensive scan with the same targets and daily or weekly period.
                     </p>
                     {groupScanHistoryByMonth(scanHistory).map((group) => (
                       <div key={group.monthKey} className="scan-history-month">
@@ -633,16 +672,72 @@ export default function TargetsPage() {
                                       {run.period === "weekly" ? "Weekly" : "Daily"}
                                     </span>
                                   </div>
-                                  {digestRunId ? (
-                                    <Link
-                                      href={`/digest/${digestRunId}`}
-                                      className="link"
-                                      style={{ fontSize: "0.85rem", fontWeight: 600 }}
-                                      aria-label={`View digest for scan on ${formatDate(when)}`}
-                                    >
-                                      View digest
-                                    </Link>
-                                  ) : null}
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      flexWrap: "wrap",
+                                      alignItems: "center",
+                                      gap: "0.5rem 0.75rem",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {digestRunId ? (
+                                      <Link
+                                        href={`/digest/${digestRunId}`}
+                                        className="link"
+                                        style={{ fontSize: "0.85rem", fontWeight: 600 }}
+                                        aria-label={`View digest for scan on ${formatDate(when)}`}
+                                      >
+                                        View digest
+                                      </Link>
+                                    ) : null}
+                                    {isFailed && run.targetIds && run.targetIds.length > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="link link-as-button"
+                                        style={{ fontSize: "0.85rem", fontWeight: 600 }}
+                                        disabled={historyRetryRunId !== null}
+                                        aria-busy={historyRetryRunId === run._id}
+                                        aria-label={`Re-run scan for ${targetNames}`}
+                                        onClick={async () => {
+                                          setHistoryScanError(null);
+                                          setHistoryScanSuccess(null);
+                                          setHistoryRowErrorDismissed((prev) => new Set(prev).add(run._id));
+                                          setHistoryRetryRunId(run._id);
+                                          try {
+                                            const result = await postManualComprehensiveScan(run.period, run.targetIds!);
+                                            if (!result.ok) {
+                                              setHistoryRowErrorDismissed((prev) => {
+                                                const next = new Set(prev);
+                                                next.delete(run._id);
+                                                return next;
+                                              });
+                                              setHistoryScanError(result.error);
+                                            } else {
+                                              const n = result.newFound;
+                                              setHistoryScanSuccess(
+                                                n > 0
+                                                  ? `${result.totalFound} items found, ${n} new. Digest updated if applicable.`
+                                                  : `${result.totalFound} items found, 0 new.`,
+                                              );
+                                              setTimeout(() => setHistoryScanSuccess(null), 10000);
+                                            }
+                                          } catch (e) {
+                                            setHistoryRowErrorDismissed((prev) => {
+                                              const next = new Set(prev);
+                                              next.delete(run._id);
+                                              return next;
+                                            });
+                                            setHistoryScanError(e instanceof Error ? e.message : String(e));
+                                          } finally {
+                                            setHistoryRetryRunId(null);
+                                          }
+                                        }}
+                                      >
+                                        {historyRetryRunId === run._id ? "Running…" : "Re-run"}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </div>
                                 <p className="muted" style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", lineHeight: 1.45 }}>
                                   {targetNames}
@@ -652,7 +747,9 @@ export default function TargetsPage() {
                                     ? "Scan did not finish successfully."
                                     : `${run.newItemsFound ?? 0} new · ${run.totalItemsFound ?? 0} total items · ${run.sourcesCompleted ?? 0}/${run.sourcesTotal} sources`}
                                 </p>
-                                {isFailed && run.error ? (
+                                {isFailed &&
+                                run.error &&
+                                !historyRowErrorDismissed.has(run._id) ? (
                                   <p
                                     style={{
                                       margin: "0.25rem 0 0",
