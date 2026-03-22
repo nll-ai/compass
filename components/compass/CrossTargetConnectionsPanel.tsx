@@ -172,7 +172,7 @@ export function CrossTargetConnectionsPanel({
           style={{
             display: "flex",
             flexWrap: "wrap",
-            alignItems: "flex-start",
+            alignItems: "center",
             justifyContent: "space-between",
             gap: "0.75rem",
           }}
@@ -198,7 +198,14 @@ export function CrossTargetConnectionsPanel({
               }
             }}
           >
-            {reconcileBusy ? "Refreshing…" : "Refresh graph"}
+            {reconcileBusy ? (
+              <>
+                <span className="button-inline-spinner-outline" aria-hidden />
+                Refreshing…
+              </>
+            ) : (
+              "Refresh graph"
+            )}
           </button>
         </div>
       </section>

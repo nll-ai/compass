@@ -159,6 +159,8 @@ border: 1px solid #374151
 cursor: pointer
 ```
 
+**Standard secondary (outline):** `.button-secondary` in `app/globals.css` — full §5.2 secondary spec for panel actions (e.g. Watch Targets → **Connections** → **Refresh graph**).
+
 **Compact secondary (outline):** `.button-secondary-compact` in `app/globals.css` — same treatment with smaller type/padding for dense rows (e.g. **Dismiss** beside source progress on Watch Targets → Running scans).
 
 **Ghost button (text-only):**
@@ -176,9 +178,9 @@ On hover: `color: #111827`.
 
 **Implemented variant:** `.button-ghost` in `app/globals.css` matches the ghost spec (e.g. **Dismiss** on Watch Targets → Running scans).
 
-**Disabled state:** `opacity: 0.5; cursor: not-allowed` (or `cursor: wait` when loading).
+**Disabled state:** `opacity: 0.5; cursor: not-allowed`. For async work while the control is disabled, set `aria-busy="true"`; `.button-secondary` and `.button-secondary-compact` then use `cursor: wait` via `[aria-busy="true"]` only.
 
-**Loading state:** Show a small spinner (`12–14px`, `border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: scan-spin 0.7s linear infinite`) inline to the left of the button label.
+**Loading state:** Show a small spinner (`12–14px`, `border-radius: 50%; animation: scan-spin 0.7s linear infinite`) inline to the left of the label. On **primary** (filled) buttons use a light ring: `border: 2px solid rgba(255,255,255,0.3); border-top-color: white` (see `ScanButton`). On **outline** secondary buttons use `.button-inline-spinner-outline` in `app/globals.css` (neutral track + `#374151` top segment).
 
 **Rules:**
 - Buttons always have `type="button"` unless they are form submit buttons (`type="submit"`).

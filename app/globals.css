@@ -96,8 +96,51 @@ a {
   cursor: not-allowed;
 }
 
+/* Secondary outline — styleguide §5.2 (panel CTAs, e.g. Connections → Refresh graph) */
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: transparent;
+  color: #374151;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #374151;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  flex-shrink: 0;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.button-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #111827;
+  color: #111827;
+}
+.button-secondary:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+.button-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.button-secondary:disabled[aria-busy="true"] {
+  cursor: wait;
+}
+
 /* Compact secondary (outline) — inline row actions; styleguide §5.2 secondary */
 .button-secondary-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   background: transparent;
   color: #374151;
   font-weight: 600;
@@ -107,6 +150,7 @@ a {
   border: 1px solid #374151;
   cursor: pointer;
   font-family: inherit;
+  line-height: 1.25;
   transition:
     color 0.15s ease,
     background 0.15s ease,
@@ -117,9 +161,27 @@ a {
   border-color: #111827;
   color: #111827;
 }
+.button-secondary-compact:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
 .button-secondary-compact:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.button-secondary-compact:disabled[aria-busy="true"] {
+  cursor: wait;
+}
+
+/* Outline secondary loading spinner (neutral ring; primary buttons use white ring in ScanButton) */
+.button-inline-spinner-outline {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid rgba(55, 65, 81, 0.22);
+  border-top-color: #374151;
+  border-radius: 50%;
+  animation: scan-spin 0.7s linear infinite;
 }
 
 .muted {
