@@ -5,12 +5,38 @@ import Link from "next/link";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useConvexAuthQuerySkip } from "@/lib/convexAuthQuery";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { ScanButton } from "@/components/compass/ScanButton";
 import { formatDate, executiveSummarySnippet } from "@/lib/formatters";
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+function monthGroupKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+function formatMonthHeading(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+type ScanHistoryEntry = Doc<"scanRuns"> & { digestRunId: Id<"digestRuns"> | null };
+
+function groupScanHistoryByMonth(entries: ScanHistoryEntry[]) {
+  const groups: { monthKey: string; label: string; entries: ScanHistoryEntry[] }[] = [];
+  for (const entry of entries) {
+    const t = entry.completedAt ?? entry.scheduledFor;
+    const key = monthGroupKey(t);
+    const last = groups[groups.length - 1];
+    if (!last || last.monthKey !== key) {
+      groups.push({ monthKey: key, label: formatMonthHeading(t), entries: [entry] });
+    } else {
+      last.entries.push(entry);
+    }
+  }
+  return groups;
 }
 
 type ListTarget = {
@@ -241,6 +267,13 @@ export default function TargetsPage() {
   const targets = useQuery(api.watchTargets.listAll, skipQueries ? "skip" : {});
   const myTeam = useQuery(api.teams.getMyTeam, skipQueries ? "skip" : {});
   const runningScans = useQuery(api.scans.listRunning, skipQueries ? "skip" : {});
+  const [activeTab, setActiveTab] = useState<"main" | "history">("main");
+  const scanHistory = useQuery(
+    api.scans.listScanHistory,
+    skipQueries || activeTab !== "history" || targets === undefined || targets.length === 0
+      ? "skip"
+      : { limit: 30 },
+  );
   const subscribe = useMutation(api.targetSubscriptions.subscribe);
   const unsubscribe = useMutation(api.targetSubscriptions.unsubscribe);
   const dismissStuckScan = useMutation(api.scans.dismissStuckScanRun);
@@ -307,8 +340,8 @@ export default function TargetsPage() {
       <h1>Watch Targets</h1>
       <p className="muted">
         {teamMode
-          ? "Team watch targets. Check “In digest” for targets included in your combined email and global schedule."
-          : "Drugs, biological targets, companies, and people you're monitoring."}
+          ? "Use Targets for what’s in your digest and other team-wide targets. Recent scans is only completed and failed runs."
+          : "Drugs, biological targets, companies, and people you're monitoring. Recent scans lists completed and failed runs."}
       </p>
       {showSoloTeamHint && (
         <section
@@ -326,159 +359,321 @@ export default function TargetsPage() {
         </section>
       )}
 
-      {scanError && (
-        <p style={{ color: "var(--error, #b91c1c)", margin: 0, fontSize: "0.9rem" }} role="alert">{scanError}</p>
-      )}
-      {scanSuccess && (
-        <p style={{ color: "var(--success, #059669)", margin: 0, fontSize: "0.9rem" }}>{scanSuccess}</p>
-      )}
+      <div className="settings-layout">
+        <nav className="settings-sidebar" aria-label="Watch targets sections">
+          <div className="settings-tablist" role="tablist" aria-orientation="vertical">
+            <button
+              type="button"
+              role="tab"
+              id="targets-tab-main"
+              className="settings-tab"
+              aria-selected={activeTab === "main"}
+              aria-controls="targets-panel-main"
+              tabIndex={activeTab === "main" ? 0 : -1}
+              onClick={() => setActiveTab("main")}
+            >
+              Targets
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="targets-tab-history"
+              className="settings-tab"
+              aria-selected={activeTab === "history"}
+              aria-controls="targets-panel-history"
+              tabIndex={activeTab === "history" ? 0 : -1}
+              onClick={() => setActiveTab("history")}
+            >
+              Recent scans
+            </button>
+          </div>
+        </nav>
 
-      {runningScans !== undefined && runningScans.length > 0 && (
-        <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Running scans">
-          <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Running scans</h2>
-          <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
-            Scans currently pending or in progress. This list updates automatically.
-          </p>
-          <ul className="running-scan-list stack" style={{ listStyle: "none", padding: 0, margin: 0, gap: "0.5rem" }}>
-            {runningScans.map((run) => {
-              const targetNames =
-                run.targetIds
-                  ?.map((id) => targetById.get(id)?.displayName)
-                  .filter(Boolean)
-                  .join(", ") ?? "—";
-              const time =
-                run.status === "running" && run.startedAt != null
-                  ? `Started ${formatDate(run.startedAt)} ${formatTime(run.startedAt)}`
-                  : `Scheduled ${formatDate(run.scheduledFor)} ${formatTime(run.scheduledFor)}`;
-              const progress = `${run.sourcesCompleted ?? 0}/${run.sourcesTotal} sources`;
-              return (
-                <li
-                  key={run._id}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.35rem",
-                    padding: "0.5rem 0",
-                    borderBottom: "1px solid var(--border, #e5e7eb)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "0.5rem 0.75rem",
-                    }}
-                  >
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem 1rem", minWidth: 0 }}>
-                      <span
+        <div className="settings-panels stack" style={{ gap: "1rem" }}>
+          <div
+            id="targets-panel-main"
+            role="tabpanel"
+            aria-labelledby="targets-tab-main"
+            hidden={activeTab !== "main"}
+          >
+            <div className="stack" style={{ gap: "1rem" }}>
+            {scanError && (
+              <p style={{ color: "var(--error, #b91c1c)", margin: 0, fontSize: "0.9rem" }} role="alert">{scanError}</p>
+            )}
+            {scanSuccess && (
+              <p style={{ color: "var(--success, #059669)", margin: 0, fontSize: "0.9rem" }}>{scanSuccess}</p>
+            )}
+
+            <Link
+              href="/targets/new"
+              className="card muted"
+              style={{ display: "inline-block", padding: "0.5rem 1rem" }}
+            >
+              + Add Watch Target
+            </Link>
+
+            {targets.length === 0 ? (
+              <div className="card">
+                <p className="muted" style={{ margin: 0 }}>
+                  No watch targets yet. <Link href="/targets/new">Add your first watch target</Link>.
+                </p>
+              </div>
+            ) : teamMode ? (
+              <div className="stack" style={{ gap: "1.25rem" }}>
+                <TargetListSection
+                  title="In your digest"
+                  description="Included in combined digest emails and your Settings digest schedule."
+                  targets={inDigest}
+                  emptyHint={
+                    inDigest.length === 0
+                      ? "No targets yet. Subscribe to team-wide targets below or add a new watch target."
+                      : undefined
+                  }
+                  scanningIds={scanningIds}
+                  setScanError={setScanError}
+                  setScanSuccess={setScanSuccess}
+                  setScanningIds={setScanningIds}
+                  showSubscribeToggle
+                  subscribe={subscribe}
+                  unsubscribe={unsubscribe}
+                />
+                <TargetListSection
+                  title="Team-wide targets"
+                  description="Shared with your team — subscribe to include them in your digest and scheduled scans."
+                  targets={notInDigest}
+                  scanningIds={scanningIds}
+                  setScanError={setScanError}
+                  setScanSuccess={setScanSuccess}
+                  setScanningIds={setScanningIds}
+                  showSubscribeToggle
+                  subscribe={subscribe}
+                  unsubscribe={unsubscribe}
+                />
+              </div>
+            ) : (
+              <TargetListSection
+                title="Watch targets"
+                targets={listTargets}
+                scanningIds={scanningIds}
+                setScanError={setScanError}
+                setScanSuccess={setScanSuccess}
+                setScanningIds={setScanningIds}
+                showSubscribeToggle={teamMode}
+                subscribe={subscribe}
+                unsubscribe={unsubscribe}
+              />
+            )}
+
+            {runningScans !== undefined && runningScans.length > 0 && (
+              <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Running scans">
+                <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Running scans</h2>
+                <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                  Scans currently pending or in progress. This list updates automatically.
+                </p>
+                <ul className="running-scan-list stack" style={{ listStyle: "none", padding: 0, margin: 0, gap: "0.5rem" }}>
+                  {runningScans.map((run) => {
+                    const targetNames =
+                      run.targetIds
+                        ?.map((id) => targetById.get(id)?.displayName)
+                        .filter(Boolean)
+                        .join(", ") ?? "—";
+                    const time =
+                      run.status === "running" && run.startedAt != null
+                        ? `Started ${formatDate(run.startedAt)} ${formatTime(run.startedAt)}`
+                        : `Scheduled ${formatDate(run.scheduledFor)} ${formatTime(run.scheduledFor)}`;
+                    const progress = `${run.sourcesCompleted ?? 0}/${run.sourcesTotal} sources`;
+                    return (
+                      <li
+                        key={run._id}
                         style={{
-                          fontSize: "0.85rem",
-                          fontWeight: 600,
-                          color: run.status === "running" ? "var(--link, #2563eb)" : "var(--muted, #6b7280)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.35rem",
+                          padding: "0.5rem 0",
+                          borderBottom: "1px solid var(--border, #e5e7eb)",
                         }}
                       >
-                        {run.status === "running" ? "Running" : "Pending"}
-                      </span>
-                      <span className="muted" style={{ fontSize: "0.85rem" }}>{time}</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        className="button-secondary-compact"
-                        disabled={dismissingRunId === run._id}
-                        aria-label={`Dismiss stuck scan: ${targetNames}`}
-                        onClick={async () => {
-                          setScanError(null);
-                          setDismissingRunId(run._id);
-                          try {
-                            const result = await dismissStuckScan({ scanRunId: run._id });
-                            if (!result.ok && result.reason === "already_finished") {
-                              // Run completed or failed between list render and dismiss; list will update.
-                              return;
-                            }
-                          } catch (e) {
-                            setScanError(e instanceof Error ? e.message : String(e));
-                          } finally {
-                            setDismissingRunId(null);
-                          }
-                        }}
-                      >
-                        {dismissingRunId === run._id ? "Dismissing…" : "Dismiss"}
-                      </button>
-                      <span className="muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>{progress}</span>
-                    </div>
-                  </div>
-                  <p className="muted" style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.45 }}>
-                    {targetNames}
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "0.5rem 0.75rem",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem 1rem", minWidth: 0 }}>
+                            <span
+                              style={{
+                                fontSize: "0.85rem",
+                                fontWeight: 600,
+                                color: run.status === "running" ? "var(--link, #2563eb)" : "var(--muted, #6b7280)",
+                              }}
+                            >
+                              {run.status === "running" ? "Running" : "Pending"}
+                            </span>
+                            <span className="muted" style={{ fontSize: "0.85rem" }}>{time}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              className="button-secondary-compact"
+                              disabled={dismissingRunId === run._id}
+                              aria-label={`Dismiss stuck scan: ${targetNames}`}
+                              onClick={async () => {
+                                setScanError(null);
+                                setDismissingRunId(run._id);
+                                try {
+                                  const result = await dismissStuckScan({ scanRunId: run._id });
+                                  if (!result.ok && result.reason === "already_finished") {
+                                    return;
+                                  }
+                                } catch (e) {
+                                  setScanError(e instanceof Error ? e.message : String(e));
+                                } finally {
+                                  setDismissingRunId(null);
+                                }
+                              }}
+                            >
+                              {dismissingRunId === run._id ? "Dismissing…" : "Dismiss"}
+                            </button>
+                            <span className="muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>{progress}</span>
+                          </div>
+                        </div>
+                        <p className="muted" style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.45 }}>
+                          {targetNames}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+            </div>
+          </div>
+
+          <div
+            id="targets-panel-history"
+            role="tabpanel"
+            aria-labelledby="targets-tab-history"
+            hidden={activeTab !== "history"}
+          >
+            {targets.length === 0 ? (
+              <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Recent scans">
+                <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Recent scans</h2>
+                <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                  Add a watch target first, then completed and failed runs will appear here.
+                </p>
+                <Link href="/targets/new" className="link" style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                  Add your first watch target
+                </Link>
+              </section>
+            ) : (
+              <section className="card stack" style={{ gap: "0.75rem" }} aria-label="Recent scans">
+                <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Recent scans</h2>
+                {scanHistory === undefined ? (
+                  <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }} role="status">
+                    Loading scan history…
                   </p>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      <Link
-        href="/targets/new"
-        className="card muted"
-        style={{ display: "inline-block", padding: "0.5rem 1rem" }}
-      >
-        + Add Watch Target
-      </Link>
-
-      {targets.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            No watch targets yet. <Link href="/targets/new">Add your first watch target</Link>.
-          </p>
+                ) : scanHistory.length === 0 ? (
+                  <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                    No completed scans yet. Run a scan from a target card on the Targets tab.
+                  </p>
+                ) : (
+                  <>
+                    <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                      Completed and failed runs for your watch targets, newest first. Open a digest when one was generated for that run.
+                    </p>
+                    {groupScanHistoryByMonth(scanHistory).map((group) => (
+                      <div key={group.monthKey} className="scan-history-month">
+                        <p className="scan-history-month-label">{group.label}</p>
+                        <ul className="scan-history-list">
+                          {group.entries.map((entry) => {
+                            const { digestRunId, ...run } = entry;
+                            const targetNames =
+                              run.targetIds
+                                ?.map((id) => targetById.get(id)?.displayName)
+                                .filter(Boolean)
+                                .join(", ") ?? "—";
+                            const when = run.completedAt ?? run.scheduledFor;
+                            const whenLabel = `${formatDate(when)} ${formatTime(when)}`;
+                            const isFailed = run.status === "failed";
+                            return (
+                              <li key={run._id}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "0.35rem 0.75rem",
+                                  }}
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <span
+                                      style={{
+                                        fontSize: "0.85rem",
+                                        fontWeight: 600,
+                                        color: isFailed ? "var(--error, #b91c1c)" : "var(--ink, #111827)",
+                                      }}
+                                    >
+                                      {isFailed ? "Failed" : "Completed"}
+                                    </span>
+                                    <span className="muted" style={{ fontSize: "0.85rem", marginLeft: "0.5rem" }}>
+                                      {whenLabel}
+                                    </span>
+                                    <span className="muted" style={{ fontSize: "0.85rem", marginLeft: "0.5rem" }}>
+                                      {run.period === "weekly" ? "Weekly" : "Daily"}
+                                    </span>
+                                  </div>
+                                  {digestRunId ? (
+                                    <Link
+                                      href={`/digest/${digestRunId}`}
+                                      className="link"
+                                      style={{ fontSize: "0.85rem", fontWeight: 600 }}
+                                      aria-label={`View digest for scan on ${formatDate(when)}`}
+                                    >
+                                      View digest
+                                    </Link>
+                                  ) : null}
+                                </div>
+                                <p className="muted" style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", lineHeight: 1.45 }}>
+                                  {targetNames}
+                                </p>
+                                <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.85rem" }}>
+                                  {isFailed
+                                    ? "Scan did not finish successfully."
+                                    : `${run.newItemsFound ?? 0} new · ${run.totalItemsFound ?? 0} total items · ${run.sourcesCompleted ?? 0}/${run.sourcesTotal} sources`}
+                                </p>
+                                {isFailed && run.error ? (
+                                  <p
+                                    style={{
+                                      margin: "0.25rem 0 0",
+                                      fontSize: "0.85rem",
+                                      lineHeight: 1.4,
+                                      display: "-webkit-box",
+                                      WebkitLineClamp: 3,
+                                      WebkitBoxOrient: "vertical",
+                                      overflow: "hidden",
+                                      color: "var(--error, #b91c1c)",
+                                    }}
+                                  >
+                                    {run.error}
+                                  </p>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </section>
+            )}
+          </div>
         </div>
-      ) : teamMode ? (
-        <div className="stack" style={{ gap: "1.25rem" }}>
-          <TargetListSection
-            title="In your digest"
-            description="Included in combined digest emails and your Settings digest schedule."
-            targets={inDigest}
-            emptyHint={
-              inDigest.length === 0
-                ? "No targets yet. Subscribe to team targets below or add a new watch target."
-                : undefined
-            }
-            scanningIds={scanningIds}
-            setScanError={setScanError}
-            setScanSuccess={setScanSuccess}
-            setScanningIds={setScanningIds}
-            showSubscribeToggle
-            subscribe={subscribe}
-            unsubscribe={unsubscribe}
-          />
-          <TargetListSection
-            title="Other team targets"
-            description="Subscribe to add them to your digest and scheduled scans."
-            targets={notInDigest}
-            scanningIds={scanningIds}
-            setScanError={setScanError}
-            setScanSuccess={setScanSuccess}
-            setScanningIds={setScanningIds}
-            showSubscribeToggle
-            subscribe={subscribe}
-            unsubscribe={unsubscribe}
-          />
-        </div>
-      ) : (
-        <TargetListSection
-          title="Watch targets"
-          targets={listTargets}
-          scanningIds={scanningIds}
-          setScanError={setScanError}
-          setScanSuccess={setScanSuccess}
-          setScanningIds={setScanningIds}
-          showSubscribeToggle={teamMode}
-          subscribe={subscribe}
-          unsubscribe={unsubscribe}
-        />
-      )}
+      </div>
     </main>
   );
 }

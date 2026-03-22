@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ALL_SOURCE_IDS, SOURCES_TOTAL } from "./lib/sourceIds";
@@ -92,6 +92,44 @@ export const listRecent = query({
         run.targetIds.every((id) => visible.has(id)),
     );
     return filtered.slice(0, limit);
+  },
+});
+
+/** Completed or failed scan runs for visible targets, newest by completion time first. Includes digest id when a digest was generated for that run. */
+export const listScanHistory = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) return [];
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    const limit = Math.min(args.limit ?? 30, 100);
+    const maxFetch = 500;
+    const all = await ctx.db
+      .query("scanRuns")
+      .withIndex("by_scheduledFor")
+      .order("desc")
+      .take(maxFetch);
+    const terminal = all.filter(
+      (run) =>
+        run.targetIds &&
+        run.targetIds.length > 0 &&
+        run.targetIds.every((id) => visible.has(id)) &&
+        (run.status === "completed" || run.status === "failed"),
+    );
+    const sortKey = (r: Doc<"scanRuns">) => r.completedAt ?? r.startedAt ?? r.scheduledFor;
+    terminal.sort((a, b) => sortKey(b) - sortKey(a));
+    const slice = terminal.slice(0, limit);
+    // Return a flat shape per row (scan run fields + digestRunId). Nested { run } objects
+    // have caused serialization/runtime errors in Convex for some deployments.
+    return await Promise.all(
+      slice.map(async (run) => {
+        const digest = await ctx.db
+          .query("digestRuns")
+          .withIndex("by_scanRun", (q) => q.eq("scanRunId", run._id))
+          .first();
+        return { ...run, digestRunId: digest?._id ?? null };
+      }),
+    );
   },
 });
 

@@ -30,6 +30,11 @@ a {
   gap: 1rem;
 }
 
+/* [hidden] must win over .stack or tab panels with both stay visible (display:flex beats attribute). */
+.stack[hidden] {
+  display: none !important;
+}
+
 .card {
   background: white;
   border: 1px solid #e5e7eb;
@@ -39,6 +44,36 @@ a {
 
 .running-scan-list li:last-child {
   border-bottom: none !important;
+}
+
+/* Watch Targets — scan history (month groups; styleguide §3 month label) */
+.scan-history-month {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.scan-history-month-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--subtle, #9ca3af);
+}
+.scan-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.scan-history-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.scan-history-list li:last-child {
+  border-bottom: none;
 }
 
 /* Ghost text button — styleguide §5.2 (dismiss stuck scan, compact row actions) */
@@ -375,7 +410,7 @@ a {
 .source-badge[data-source="rss"]            { background: #f3e8ff; color: #6b21a8; }
 .source-badge[data-source="openfda"]        { background: #d1fae5; color: #065f46; }
 
-/* ---- Settings (sidebar tabs) ---- */
+/* ---- Settings + Watch Targets hub (sidebar tabs; shared classes) ---- */
 
 .settings-layout {
   display: flex;

@@ -56,6 +56,21 @@ Person-type targets are scanned for publications and news mentioning the researc
 ### 4.2 Scan visibility and schedules
 
 - **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail. Users may **dismiss** a stuck run (`scans.dismissStuckScanRun`), which marks it failed so it leaves the list. **Stale reconciliation:** a Convex cron runs `scans.reconcileStaleScanRuns` **every 15 minutes**; runs left `pending` more than **1 hour** after `scheduledFor`, or `running` more than **30 minutes** after `startedAt` (or `scheduledFor` if `startedAt` is unset), are marked `failed` with a system message and incomplete per-source rows are closed out (covers Next.js timeouts, crashes, or a stuck bridge). **`POST /api/scan`** marks the run (and incomplete sources) `failed` when the handler throws after a run id exists, so the DB does not stay `running` after a 500.
+- **Recent scans (history):** On the same page, **completed** and **failed** scan runs for visible targets are loaded via `scans.listScanHistory` (newest by `completedAt` / `startedAt` / `scheduledFor`) **only when** the user opens the **Recent scans** sidebar tab **and** has at least one watch target (the client skips the query on the default tab). They appear in that tab (not the default tab); see styleguide. Rows are grouped by **calendar month** (month label, see styleguide). Each row shows outcome, time, period (daily/weekly), target names, counts (or failure reason), and **View digest** when a `digestRuns` row exists for that `scanRunId`.
+
+**Watch Targets hub (scan blocks, schematic):**
+
+```text
+[H1 Watch Targets]
+[Sidebar tabs: Targets | Recent scans]   default: Targets
+  Targets panel:
+    [+ Add Watch Target]
+    [In your digest] / [Team-wide targets]   when on a team; else [Watch targets]
+    [Running scans]     optional card — pending / running rows (after lists)
+  Recent scans panel:
+    [Completed & failed history only]   month groups + digest link; no target lists
+```
+
 - **Digest schedule (Settings only):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` evaluates **only** these rows, groups due users by **team** + local time slot (users without a `teamId` are keyed **per user**, not merged across accounts), merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan. There is **no** per-target automatic schedule table or cron path.
 - **Settings UI:** Sidebar tabs (**Team** | **Digest schedule**); default tab **Team**; `?teamInvite=` handled under `Suspense`, with success/error surfaced on the Team tab. Digest panel: natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`. **Layout, ARIA, and breakpoints:** [`docs/styleguide.md`](styleguide.md) §6 (Settings page).
 - **Target detail:** Explains that automatic timing is configured on Settings; manual “Run scan” remains on the target page.
@@ -118,7 +133,7 @@ flowchart TB
     Subs[targetSubscriptions]
     UDS[userDigestSchedule]
     scanRuns[scanRuns]
-    Digests[digests]
+    digestRuns[digestRuns]
     EmailAction[email.sendDigestEmail]
     InviteEmail[email.sendTeamInviteEmail]
     Cron[crons: schedule + stale scans]
@@ -136,10 +151,11 @@ flowchart TB
   InviteEmail -->|fetch| Resend
   TargetsPage -->|listAll, subscribe| WT
   TargetsPage -->|listRunning| scanRuns
+  TargetsPage -->|listScanHistory| scanRuns
   Cron -->|userDigestSchedule only| UDS
   Cron -->|reconcile stale scanRuns| scanRuns
   Cron -->|scheduleScan| ScanAPI[POST /api/scan]
-  Digests -->|scheduler.runAfter| EmailAction
+  digestRuns -->|scheduler.runAfter| EmailAction
   EmailAction -->|fetch| Resend
 ```
 

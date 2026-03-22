@@ -10,14 +10,14 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | **Primary hub.** Team-aware list (`listAll` with `subscribed`, `creatorLabel`), **In digest** checkbox (`targetSubscriptions`), sections for subscribed vs other team targets when `teams.getMyTeam` is set, per-card digest + scan button, **Running scans** via `scans.listRunning` (row: status + time on the left; **Dismiss** (`.button-secondary-compact`) and source progress on the right; target names on a second line). **Dismiss** → `scans.dismissStuckScanRun`. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
+| `app/targets/page.tsx` | **Primary hub.** Same **sidebar tab** layout as Settings (`.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels`): **Targets** (default) and **Recent scans**. **Targets** panel: team hint (no team), scan feedback, **+ Add Watch Target**, then **In your digest** / **Team-wide targets** (when `teams.getMyTeam` is set) or **Watch targets** (solo), per-card digest + scan; **Running scans** (`scans.listRunning`, dismiss via `scans.dismissStuckScanRun`) after the lists. Tabpanels must not use `.stack` on the same node as `[hidden]` (or rely on `.stack[hidden]` in `globals.css`). **Recent scans** panel: **only** `listScanHistory` (completed/failed), loaded when that tab is active and the user has at least one target — month groups (`.scan-history-month`, …), link to `/digest/{id}` when present. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/targets/[id]/page.tsx` | Target detail: run scan, edit target, **Automatic digest timing** card (link to Settings), insights links, source links, signal reports, delete. |
 | `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
 | `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
 | `app/history/page.tsx` | Legacy redirect to `/targets`. |
-| `app/settings/page.tsx` | Settings: **sidebar tabs** (Team | Digest schedule), default **Team**; `activeTab` state; ARIA ids `settings-tab-*` / `settings-panel-*`; **Team** panel (`getMyMembership`, `listTeamMembers`, invites, create/leave/rename); **Digest** panel (`userDigestSchedule`, `/api/schedule/parse`); `Suspense` + `SettingsTeamInviteFromUrl` for `?teamInvite=` → `acceptTeamEmailInvite`, `router.replace("/settings")` on success, callbacks switch to Team tab for messages. See [styleguide.md](styleguide.md) §6. |
+| `app/settings/page.tsx` | Settings: **sidebar tabs** (Team, Digest schedule), default **Team**; `activeTab` state; ARIA ids `settings-tab-*` / `settings-panel-*`; **Team** panel (`getMyMembership`, `listTeamMembers`, invites, create/leave/rename); **Digest** panel (`userDigestSchedule`, `/api/schedule/parse`); `Suspense` + `SettingsTeamInviteFromUrl` for `?teamInvite=` → `acceptTeamEmailInvite`, `router.replace("/settings")` on success, callbacks switch to Team tab for messages. See [styleguide.md](styleguide.md) §6. |
 | `app/globals.css` | `.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels` — Settings tab layout (see `docs/styleguide.md`). |
 | `components/compass/AddTargetForm.tsx` | Lookup + form; calls `watchTargets.create`, then `onAdded?.(id)` with returned ID. |
 | `components/compass/ScanButton.tsx` | Single "Run scan" button that always triggers comprehensive scan. Used by dashboard and target detail pages. |
@@ -33,7 +33,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, etc. |
 | `convex/users.ts` | `getUserById` (internal). |
 | `convex/email.ts` | `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
-| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
+| `convex/scans.ts` | `listRunning`, `listRecent`, `listScanHistory` (visible targets: **completed** / **failed** only; filter + sort by `completedAt` ?? `startedAt` ?? `scheduledFor`; capped read from `by_scheduledFor` then per-run `digestRuns` lookup via `by_scanRun`); `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
 | `convex/digestItems.ts` | `listByDigestRunInternal` (for email). |
 | `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, `userOwnsTarget` (same-team). No automatic team assignment on sign-in. |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
@@ -66,6 +66,10 @@ This document specifies implementation-level details: modules, Convex functions,
 - **scans.listRecent** (query)  
   Args: `{ limit?: number }`.  
   Returns: most recent scan runs for visible targets (any status).
+
+- **scans.listScanHistory** (query)  
+  Args: `{ limit?: number }` (default 30, max 100).  
+  Returns: array of **scan run documents** with an extra field `digestRunId` (`Id<"digestRuns"> | null`) for **completed** and **failed** runs only, visible targets, sorted by `completedAt ?? startedAt ?? scheduledFor` descending. `digestRunId` is set when a digest run exists for that `scanRunId` (flat shape, not nested `{ run }`, for reliable Convex serialization).
 
 - **scans.get** (query)  
   Args: `{ id }, secret?`.  
@@ -198,7 +202,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 ### 5.3 formatSchedule (lib/formatSchedule.ts)
 
-- **Input:** Object with timezone, daily* and weekly* booleans/numbers, weekdaysOnly?, rawDescription?.
+- **Input:** Object with timezone, `daily*` and `weekly*` schedule booleans/numbers, weekdaysOnly?, rawDescription?.
 - **Output:** Human-readable string, e.g. `"Daily at 9:00. (America/New_York)"` or `"No automatic scans scheduled."`.
 
 ### 5.4 AddTargetForm callback

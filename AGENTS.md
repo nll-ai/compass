@@ -61,6 +61,12 @@ Update HLD/LLD/EARS **during** implementation when the required edits are obviou
 - CSS lives in `app/globals.css`. No CSS modules, no Tailwind, no CSS-in-JS.
 - Inline styles are acceptable for one-off layout tweaks (gap, alignment). Colors and repeated patterns must use CSS classes.
 
+### Markdown linting
+
+**After editing any Markdown files** in this repository, run **`npm run lint:md`** and fix all reported issues before you consider the work complete. **Preferred workflow:** launch a **subagent** (e.g. Cursor **Task** tool) whose job is to run markdownlint on the Markdown you changed (or the whole repo via `npm run lint:md`), **apply edits in the repo** to fix every violation, and re-run until markdownlint exits with **zero** errors. Subagents must **not** stop at reporting problems — they should **make the edits** (bare URLs, table cell pipes, fenced code languages, heading punctuation, blank lines, etc.) until clean.
+
+**Configuration:** [`.markdownlint.json`](.markdownlint.json). The `lint:md` script ignores `node_modules`, `.git`, and **`eval/edgar/outputs/**`** (generated).
+
 ### Event-driven side effects
 
 Prefer event-driven design for side effects. When a meaningful domain event occurs (e.g. digest created, scan completed), trigger downstream work (email, notifications, Slack posts) via `ctx.scheduler.runAfter(0, internal.xxx)` from the mutation that produces the event. Do not inline the side effect in the same mutation or API handler. This keeps write paths fast, decouples producers from consumers, and makes the system easier to extend with new side effects later. Example: digest creation schedules `internal.email.sendDigestEmail` via the Convex scheduler.
