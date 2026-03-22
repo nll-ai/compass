@@ -49,13 +49,25 @@ export function SignalOverlay({
       lastOpenItemRef.current = null;
     }
   }, [open, exiting]);
+
   const handleTransitionEnd = (e: React.TransitionEvent) => {
-    if (e.target !== panelRef.current || e.propertyName !== "transform") return;
+    if (e.currentTarget !== panelRef.current) return;
+    if (e.propertyName !== "transform" && e.propertyName !== "-webkit-transform") return;
     if (exiting) {
       setExiting(false);
       setExitItem(null);
     }
   };
+
+  /** transitionend can fail to fire (nested transitions, browser quirks); if exiting never clears, body stays overflow:hidden and the overlay can remain with an invisible hit target. */
+  useEffect(() => {
+    if (!exiting) return;
+    const id = window.setTimeout(() => {
+      setExiting(false);
+      setExitItem(null);
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [exiting]);
 
   useEffect(() => {
     if (!showing) {
@@ -79,6 +91,12 @@ export function SignalOverlay({
       document.body.style.overflow = "";
     };
   }, [showing, open, onClose]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -145,6 +163,8 @@ export function SignalOverlay({
         display: "flex",
         flexDirection: "row",
         justifyContent: "flex-end",
+        /* During exit, backdrop is opacity 0 but still hit-tests unless we disable events on the shell. */
+        pointerEvents: exiting ? "none" : "auto",
       }}
     >
       <div
@@ -155,6 +175,7 @@ export function SignalOverlay({
           background: "rgba(0,0,0,0.4)",
           opacity: exiting ? 0 : 1,
           transition: "opacity 0.25s ease-out",
+          pointerEvents: exiting ? "none" : "auto",
         }}
       />
       <div
@@ -172,6 +193,7 @@ export function SignalOverlay({
           transform: exiting ? "translateX(100%)" : "translateX(0)",
           transition: "transform 0.25s ease-out",
           overflow: "hidden",
+          pointerEvents: exiting ? "none" : "auto",
         }}
       >
         <div
