@@ -87,8 +87,9 @@ export async function runPatentsAgent(
       const watchTargetId = assignWatchTargetId(terms, context.targets);
       for (const p of patents) {
         const id = p.patent_id;
-        if (!id || seenIds.has(id)) continue;
-        seenIds.add(id);
+        const dedupeKey = `${watchTargetId}:${id}`;
+        if (!id || seenIds.has(dedupeKey)) continue;
+        seenIds.add(dedupeKey);
         collectedItems.push({
           watchTargetId,
           externalId: id,

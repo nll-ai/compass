@@ -41,7 +41,7 @@ export async function runExaAgent(
   if (!apiKey || context.targets.length === 0) return { items: [] };
 
   const collectedItems: RawItemInput[] = [];
-  const seenUrls = new Set<string>();
+  const seenTargetUrl = new Set<string>();
 
   const searchExa = tool({
     description:
@@ -79,9 +79,10 @@ export async function runExaAgent(
       const watchTargetId = assignWatchTargetId(query, context.targets);
       for (const hit of results) {
         const url = hit.url ?? "";
-        if (url && !seenUrls.has(url)) {
-          seenUrls.add(url);
-          const externalId = hit.id ?? url;
+        const externalId = hit.id ?? url;
+        const dedupeKey = `${watchTargetId}:${externalId}`;
+        if (url && !seenTargetUrl.has(dedupeKey)) {
+          seenTargetUrl.add(dedupeKey);
           let publishedAt: number | undefined =
             hit.publishedDate != null ? new Date(hit.publishedDate).getTime() : undefined;
           if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;

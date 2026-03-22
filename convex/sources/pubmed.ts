@@ -47,9 +47,10 @@ export const scan = internalAction({
           }
         }
         for (const pmid of idlist) {
-          const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
+          const existing = await ctx.runQuery(internal.rawItems.getByExternalIdForTarget, {
             source: "pubmed",
             externalId: pmid,
+            watchTargetId: target._id,
           });
           const isNew = !existing;
           if (existing) continue;

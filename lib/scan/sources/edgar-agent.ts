@@ -388,6 +388,22 @@ export interface SECAgentHit {
   cik: string;
 }
 
+/** Whether a watch target plausibly relates to this filing (same heuristic as final item mapping). */
+export function targetMatchesEdgarHit(hit: SECAgentHit, t: ScanTarget): boolean {
+  const companyNameLower = hit.companyName.toLowerCase();
+  const name = (t.name ?? "").toLowerCase();
+  const display = (t.displayName ?? "").toLowerCase();
+  const company = (t.company ?? "").toLowerCase();
+  const aliases = (t.aliases ?? []).map((a) => a.toLowerCase());
+  return (
+    companyNameLower.includes(company) ||
+    company.includes(companyNameLower) ||
+    name.includes(companyNameLower) ||
+    companyNameLower.includes(name) ||
+    aliases.some((a) => companyNameLower.includes(a) || a.includes(companyNameLower))
+  );
+}
+
 /**
  * Run the SEC EDGAR source agent: receives orchestrator context (mission, targets, env),
  * performs agentic search with tools (full-text search + company lookup), returns SourceResult.
@@ -402,7 +418,7 @@ export async function runEdgarAgent(
     {
       ...options,
       mission: context.mission,
-      existingExternalIds: context.existingExternalIdsBySource?.edgar,
+      existingExternalIdsByWatchTarget: context.existingExternalIdsByWatchTarget,
     }
   );
   return { items, error };
@@ -490,11 +506,11 @@ export async function runSECSearchAgent(
     maxSteps?: number;
     fullTextCount?: number;
     mission?: string;
-    /** External IDs already stored for this source; prioritize summarizing filings not in this set. */
-    existingExternalIds?: Set<string>;
+    /** Per watch target, EDGAR accession numbers already stored (per-target dedup). */
+    existingExternalIdsByWatchTarget?: Record<string, Record<string, string[]>>;
   } = {}
 ): Promise<{ items: RawItemInput[]; error?: string }> {
-  const { maxSteps = 5, fullTextCount = 15, mission, existingExternalIds } = options;
+  const { maxSteps = 5, fullTextCount = 15, mission, existingExternalIdsByWatchTarget } = options;
   if (!openaiKey || targets.length === 0) return { items: [] };
 
   const collectedHits = new Map<string, SECAgentHit>();
@@ -616,9 +632,17 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     const db = b.fileDate || "";
     return db.localeCompare(da);
   });
-  const notYetStored = existingExternalIds
-    ? sortedHits.filter((h) => !existingExternalIds.has(h.adsh))
-    : sortedHits;
+  const edgarIdsForTarget = (targetId: string): Set<string> => {
+    const row = existingExternalIdsByWatchTarget?.[targetId]?.edgar;
+    return row?.length ? new Set(row) : new Set();
+  };
+
+  const notYetStored = sortedHits.filter((h) =>
+    targets.some((t) => {
+      if (!targetMatchesEdgarHit(h, t)) return false;
+      return !edgarIdsForTarget(t._id).has(h.adsh);
+    }),
+  );
   const toSummarize = notYetStored.slice(0, MAX_FILINGS_TO_SUMMARIZE);
   const targetContexts: SummarizeTargetContext[] = targets.map((t) => ({
     name: t.name,
@@ -654,33 +678,22 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     );
   }
 
-  // Map collected hits to RawItemInput with best-effort watchTargetId and parsed abstract
+  // One row per (hit, target) when the target matches and does not already have this accession.
   const items: RawItemInput[] = [];
   for (const hit of collectedHits.values()) {
-    const companyNameLower = hit.companyName.toLowerCase();
-    const matchedTarget = targets.find((t) => {
-      const name = (t.name ?? "").toLowerCase();
-      const display = (t.displayName ?? "").toLowerCase();
-      const company = (t.company ?? "").toLowerCase();
-      const aliases = (t.aliases ?? []).map((a) => a.toLowerCase());
-      return (
-        companyNameLower.includes(company) ||
-        company.includes(companyNameLower) ||
-        name.includes(companyNameLower) ||
-        companyNameLower.includes(name) ||
-        aliases.some((a) => companyNameLower.includes(a) || a.includes(companyNameLower))
-      );
-    });
-    const watchTargetId = matchedTarget?._id ?? targets[0]._id;
-    items.push({
-      watchTargetId,
-      externalId: hit.adsh,
-      title: hit.title,
-      url: hit.url,
-      abstract: adshToAbstract.get(hit.adsh),
-      publishedAt: hit.fileDate ? new Date(hit.fileDate).getTime() : undefined,
-      metadata: { cik: hit.cik, form: hit.form, company: hit.companyName, source: "edgar_agent" },
-    });
+    for (const t of targets) {
+      if (!targetMatchesEdgarHit(hit, t)) continue;
+      if (edgarIdsForTarget(t._id).has(hit.adsh)) continue;
+      items.push({
+        watchTargetId: t._id,
+        externalId: hit.adsh,
+        title: hit.title,
+        url: hit.url,
+        abstract: adshToAbstract.get(hit.adsh),
+        publishedAt: hit.fileDate ? new Date(hit.fileDate).getTime() : undefined,
+        metadata: { cik: hit.cik, form: hit.form, company: hit.companyName, source: "edgar_agent" },
+      });
+    }
   }
 
   // When we have 0 items, surface SEC API error so the user sees why (e.g. 403 User-Agent).

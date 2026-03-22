@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { useConvexAuthQuerySkip } from "@/lib/convexAuthQuery";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { ScanButton } from "@/components/compass/ScanButton";
+import { CrossTargetConnectionsPanel } from "@/components/compass/CrossTargetConnectionsPanel";
 import { formatDate, executiveSummarySnippet } from "@/lib/formatters";
 
 type ManualScanResponse =
@@ -295,13 +296,16 @@ export default function TargetsPage() {
   const targets = useQuery(api.watchTargets.listAll, skipQueries ? "skip" : {});
   const myTeam = useQuery(api.teams.getMyTeam, skipQueries ? "skip" : {});
   const runningScans = useQuery(api.scans.listRunning, skipQueries ? "skip" : {});
-  const [activeTab, setActiveTab] = useState<"main" | "history">("main");
+  const [activeTab, setActiveTab] = useState<"main" | "history" | "connections">("main");
   const scanHistory = useQuery(
     api.scans.listScanHistory,
     skipQueries || activeTab !== "history" || targets === undefined || targets.length === 0
       ? "skip"
       : { limit: 30 },
   );
+  const connectionsPanelActive =
+    !skipQueries && activeTab === "connections" && targets !== undefined;
+  const connectionsEdgesSkip = !connectionsPanelActive || targets.length === 0;
   const subscribe = useMutation(api.targetSubscriptions.subscribe);
   const unsubscribe = useMutation(api.targetSubscriptions.unsubscribe);
   const dismissStuckScan = useMutation(api.scans.dismissStuckScanRun);
@@ -421,6 +425,18 @@ export default function TargetsPage() {
               onClick={() => setActiveTab("history")}
             >
               Recent scans
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="targets-tab-connections"
+              className="settings-tab"
+              aria-selected={activeTab === "connections"}
+              aria-controls="targets-panel-connections"
+              tabIndex={activeTab === "connections" ? 0 : -1}
+              onClick={() => setActiveTab("connections")}
+            >
+              Connections
             </button>
           </div>
         </nav>
@@ -586,6 +602,19 @@ export default function TargetsPage() {
               </section>
             )}
             </div>
+          </div>
+
+          <div
+            id="targets-panel-connections"
+            role="tabpanel"
+            aria-labelledby="targets-tab-connections"
+            hidden={activeTab !== "connections"}
+          >
+            <CrossTargetConnectionsPanel
+              skip={!connectionsPanelActive}
+              skipEdgesQuery={connectionsEdgesSkip}
+              targetCount={targets.length}
+            />
           </div>
 
           <div

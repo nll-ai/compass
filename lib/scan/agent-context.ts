@@ -5,15 +5,16 @@ import type { SourceId } from "../sources/registry";
  * Context passed to every source agent by the orchestrator.
  * mission: orchestrator-provided goal (e.g. "Find new signals for daily digest...")
  * targets, env, scanOptions: same as current runners for API keys and mode.
- * existingExternalIdsBySource: per-source external IDs already stored (so agents can prioritize new items).
+ * existingExternalIdsByWatchTarget: per watch target, per source, external IDs already stored
+ * (so the same document can be inserted for another target without global dedup).
  */
 export interface SourceAgentContext {
   mission: string;
   targets: ScanTarget[];
   env: Record<string, string | undefined>;
   scanOptions?: ScanOptions;
-  /** External IDs we already have per source; agents should prioritize items not in this set. */
-  existingExternalIdsBySource?: Record<SourceId, Set<string>>;
+  /** `watchTargetId` -> source -> external ids already stored for that target. */
+  existingExternalIdsByWatchTarget?: Record<string, Record<string, string[]>>;
 }
 
 /** Shape of feedback returned by feedbackForScan.getFeedbackForMission (good/bad from digest items and source links). */

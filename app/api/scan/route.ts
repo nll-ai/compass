@@ -141,10 +141,14 @@ export async function POST(request: Request) {
       startedAt: Date.now(),
     });
 
-    const existingExternalIdsBySource = await client.query(api.rawItems.getExistingExternalIdsFromServer, {
-      secret: effectiveSecret,
-      sources: sourcesRan,
-    });
+    const existingExternalIdsByWatchTarget = await client.query(
+      api.rawItems.getExistingExternalIdsByWatchTargetFromServer,
+      {
+        secret: effectiveSecret,
+        sources: sourcesRan,
+        watchTargetIds: scanTargets.map((t) => t._id),
+      },
+    );
 
     const feedbackForMission = await client.query(api.feedbackForScan.getFeedbackForMission, {
       watchTargetIds: scanTargets.map((t) => t._id),
@@ -155,7 +159,10 @@ export async function POST(request: Request) {
       ...scanOptions,
       period,
       sources: sourceIdsToRun,
-      existingExternalIdsBySource: existingExternalIdsBySource as Record<string, string[]>,
+      existingExternalIdsByWatchTarget: existingExternalIdsByWatchTarget as Record<
+        string,
+        Record<string, string[]>
+      >,
       feedbackForMission: feedbackForMission as import("../../../lib/scan/agent-context").FeedbackForMission,
     });
 

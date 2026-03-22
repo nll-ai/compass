@@ -61,9 +61,10 @@ export const scan = internalAction({
           let publishedAt: number | undefined =
             publishedDate != null ? new Date(publishedDate).getTime() : undefined;
           if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
-          const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
+          const existing = await ctx.runQuery(internal.rawItems.getByExternalIdForTarget, {
             source: "exa",
             externalId,
+            watchTargetId: target._id,
           });
           const isNew = !existing;
           if (existing) continue;

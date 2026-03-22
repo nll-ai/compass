@@ -48,7 +48,6 @@ async function fetchClinicalTrialsProcedural(
  */
 async function runClinicalTrialsProceduralPath(context: SourceAgentContext): Promise<SourceResult> {
   const items: RawItemInput[] = [];
-  const seenNctIds = new Set<string>();
 
   for (const target of context.targets) {
     const query = [target.name, target.displayName, ...(target.aliases ?? [])]
@@ -57,11 +56,7 @@ async function runClinicalTrialsProceduralPath(context: SourceAgentContext): Pro
       .find((s) => s.length >= 2);
     if (!query) continue;
     const procedural = await fetchClinicalTrialsProcedural(query, target._id);
-    for (const item of procedural) {
-      if (seenNctIds.has(item.externalId)) continue;
-      seenNctIds.add(item.externalId);
-      items.push(item);
-    }
+    items.push(...procedural);
   }
   return { items };
 }

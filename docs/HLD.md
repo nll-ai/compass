@@ -39,6 +39,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 | **Frontend (app/, components/)** | Pages, forms, navigation. All data via Convex React hooks. |
 | **Convex (convex/)** | Schema, queries, mutations, internal mutations, actions, crons. Single deployment unit. |
 | **Scan API (app/api/scan)** | Accepts scan requests (manual or from Convex), runs source agents, writes raw items and digest. |
+| **Cross-target graph (Convex)** | After a successful scan, reconciles `graphCrossTargetEdges` when the same `source` + `externalId` appears under two or more watch targets in the same workspace (`team` or `user` scope). The Watch Targets hub **Connections** tab subscribes to **`crossTargetGraph.listEdgesForViewer` only** when that tab is active **and** the hub has **at least one** loaded watch target; it **groups** edges by **target pair**, **auto-selects the first pair** when edges exist, loads evidence via **`rawItems.getByIds`**, and **deduplicates** shared links **by URL** in the Shared sources column. |
 | **Schedule parse API (app/api/schedule/parse)** | Parses natural-language schedule strings into structured daily/weekly/timezone for Convex. |
 | **Resend (external)** | Email delivery for digest notifications; invoked from Convex action via REST API. |
 
@@ -62,14 +63,18 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ```text
 [H1 Watch Targets]
-[Sidebar tabs: Targets | Recent scans]   default: Targets
+[Sidebar tabs: Targets | Recent scans | Connections]   default: Targets
   Targets panel:
     [+ Add Watch Target]
     [In your digest] / [Team-wide targets]   when on a team; else [Watch targets]
     [Running scans]     optional card — pending / running rows (after lists)
   Recent scans panel:
     [Completed & failed history only]   month groups + digest link + Re-run on failed rows; no target lists
+  Connections panel:
+    [Target pairs | Shared sources]   one row per pair (aggregated); first pair auto-selected when edges load; dedupe URLs in evidence; Refresh graph; empty if < 2 targets
 ```
+
+- **Cross-target connections (graph, Phase 1):** `rawItems` are deduplicated **per watch target** (`source` + `externalId` + `watchTargetId`). When `scans.updateScanStatusFromServer` sets a run to **`completed`**, Convex schedules **`internal.crossTargetGraph.reconcileForWatchTargets`** for that run’s `targetIds`, which upserts **`graphCrossTargetEdges`** for pairs of targets in the same scope (`team:<id>` or `user:<id>`) that share a document key (`source:externalId`). The client subscribes to **`crossTargetGraph.listEdgesForViewer` only** when the **Connections** tab is selected **and** `targets.length >= 1` (other tabs and the zero-target case skip the query). **`crossTargetGraph.scheduleReconcileForMyVisibleTargets`** backfills from all visible targets (**Refresh graph**). The client **groups** flat edges by watch-target **pair** for the left column; **when** any pairs exist, it **selects the first pair** by default (most recently updated) until the user picks another. The right column uses **`rawItems.getByIds`** (auth-scoped) on merged ids for the selected pair and **collapses duplicate URLs** when rendering.
 
 - **Digest schedule (Settings only):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` evaluates **only** these rows, groups due users by **team** + local time slot (users without a `teamId` are keyed **per user**, not merged across accounts), merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan. There is **no** per-target automatic schedule table or cron path.
 - **Settings UI:** Sidebar tabs (**Team** | **Digest schedule**); default tab **Team**; `?teamInvite=` handled under `Suspense`, with success/error surfaced on the Team tab. Digest panel: natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`. **Layout, ARIA, and breakpoints:** [`docs/styleguide.md`](styleguide.md) §6 (Settings page).

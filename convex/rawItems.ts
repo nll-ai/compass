@@ -24,6 +24,7 @@ const rawItemInputValidator = v.object({
   metadata: v.any(),
 });
 
+/** @deprecated Prefer getByExternalIdForTarget — one row per (source, externalId, watchTarget). */
 export const getByExternalId = internalQuery({
   args: { source: sourceValidator, externalId: v.string() },
   handler: async (ctx, { source, externalId }) => {
@@ -32,6 +33,34 @@ export const getByExternalId = internalQuery({
       .withIndex("by_externalId", (q) => q.eq("source", source).eq("externalId", externalId))
       .first();
     return item;
+  },
+});
+
+/** Dedup check: at most one raw item per source + external id + watch target. */
+export const getByExternalIdForTarget = internalQuery({
+  args: {
+    source: sourceValidator,
+    externalId: v.string(),
+    watchTargetId: v.id("watchTargets"),
+  },
+  handler: async (ctx, { source, externalId, watchTargetId }) => {
+    return await ctx.db
+      .query("rawItems")
+      .withIndex("by_source_external_watchTarget", (q) =>
+        q.eq("source", source).eq("externalId", externalId).eq("watchTargetId", watchTargetId),
+      )
+      .first();
+  },
+});
+
+/** All raw rows sharing a global source + external id (cross-target graph / reconciliation). */
+export const listBySourceAndExternalId = internalQuery({
+  args: { source: sourceValidator, externalId: v.string() },
+  handler: async (ctx, { source, externalId }) => {
+    return await ctx.db
+      .query("rawItems")
+      .withIndex("by_externalId", (q) => q.eq("source", source).eq("externalId", externalId))
+      .collect();
   },
 });
 
@@ -83,7 +112,9 @@ export const upsertRawItemsFromServer = mutation({
     for (const item of items) {
       const existing = await ctx.db
         .query("rawItems")
-        .withIndex("by_externalId", (q) => q.eq("source", source).eq("externalId", item.externalId))
+        .withIndex("by_source_external_watchTarget", (q) =>
+          q.eq("source", source).eq("externalId", item.externalId).eq("watchTargetId", item.watchTargetId),
+        )
         .first();
       const isNew = !existing;
       if (existing) continue;
@@ -131,6 +162,37 @@ export const getExistingExternalIdsFromServer = query({
         .filter((q) => q.eq(q.field("source"), source))
         .collect();
       out[source] = [...new Set(items.map((i) => i.externalId))];
+    }
+    return out;
+  },
+});
+
+/**
+ * Per watch target, external ids already stored per source — so scans can insert the same document
+ * for another target without skipping it globally.
+ */
+export const getExistingExternalIdsByWatchTargetFromServer = query({
+  args: {
+    secret: v.string(),
+    sources: v.array(v.string()),
+    watchTargetIds: v.array(v.id("watchTargets")),
+  },
+  handler: async (ctx, { secret, sources, watchTargetIds }) => {
+    if (!checkSecret(secret)) return {} as Record<string, Record<string, string[]>>;
+    const sourceSet = new Set(sources);
+    const out: Record<string, Record<string, string[]>> = {};
+    for (const watchTargetId of watchTargetIds) {
+      const perSource: Record<string, string[]> = {};
+      const items = await ctx.db
+        .query("rawItems")
+        .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
+        .collect();
+      for (const src of sources) {
+        if (!sourceSet.has(src)) continue;
+        const ids = items.filter((i) => i.source === src).map((i) => i.externalId);
+        perSource[src] = [...new Set(ids)];
+      }
+      out[watchTargetId] = perSource;
     }
     return out;
   },

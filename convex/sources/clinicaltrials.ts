@@ -45,9 +45,10 @@ export const scan = internalAction({
           let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
           if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
           if (!nctId) continue;
-          const existing = await ctx.runQuery(internal.rawItems.getByExternalId, {
+          const existing = await ctx.runQuery(internal.rawItems.getByExternalIdForTarget, {
             source: "clinicaltrials",
             externalId: nctId,
+            watchTargetId: target._id,
           });
           const isNew = !existing;
           if (existing) continue;

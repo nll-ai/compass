@@ -12,7 +12,7 @@ import { fetchWithRetry, sleep } from "../fetchWithRetry";
 
 const THROTTLE_MS = 200;
 
-interface PubMedHit {
+interface PubMedHitCore {
   pmid: string;
   title: string;
   url: string;
@@ -21,11 +21,13 @@ interface PubMedHit {
   metadata?: Record<string, unknown>;
 }
 
+type PubMedHit = PubMedHitCore & { watchTargetId: ScanTarget["_id"] };
+
 async function searchPubMedAPI(
   term: string,
   apiKey: string | undefined,
   options: { retmax?: number; mindate?: string; maxdate?: string } = {}
-): Promise<PubMedHit[]> {
+): Promise<PubMedHitCore[]> {
   const { retmax = 20, mindate, maxdate } = options;
   const params = new URLSearchParams({
     db: "pubmed",
@@ -55,7 +57,7 @@ async function searchPubMedAPI(
   };
   const result = summaryData.result ?? {};
 
-  const hits: PubMedHit[] = [];
+  const hits: PubMedHitCore[] = [];
   for (const pmid of idlist) {
     const entry = result[pmid];
     const title = entry?.title?.trim() || `PubMed ${pmid}`;
@@ -74,16 +76,16 @@ async function searchPubMedAPI(
   return hits;
 }
 
-function assignWatchTargetId(hit: PubMedHit, targets: ScanTarget[]): ScanTarget["_id"] {
-  const titleLower = hit.title.toLowerCase();
-  const match = targets.find((t) => {
-    const name = (t.name ?? "").toLowerCase();
-    const display = (t.displayName ?? "").toLowerCase();
-    const aliases = (t.aliases ?? []).map((a) => a.toLowerCase());
+function assignWatchTargetIdFromTerm(term: string, targets: ScanTarget[]): ScanTarget["_id"] {
+  const t = term.toLowerCase();
+  const match = targets.find((target) => {
+    const name = (target.name ?? "").toLowerCase();
+    const display = (target.displayName ?? "").toLowerCase();
+    const aliases = (target.aliases ?? []).map((a) => a.toLowerCase());
     return (
-      titleLower.includes(name) ||
-      titleLower.includes(display) ||
-      aliases.some((a) => titleLower.includes(a))
+      t.includes(name) ||
+      t.includes(display) ||
+      [name, display, ...aliases].some((a) => a.length >= 2 && t.includes(a))
     );
   });
   return match?._id ?? targets[0]._id;
@@ -102,7 +104,7 @@ export async function runPubMedAgent(
   if (!apiKey || context.targets.length === 0) return { items: [] };
 
   const collectedHits: PubMedHit[] = [];
-  const seenPmids = new Set<string>();
+  const seenTargetPmid = new Set<string>();
 
   const searchPubMed = tool({
     description:
@@ -114,12 +116,13 @@ export async function runPubMedAgent(
       maxdate: z.string().optional().describe("End date YYYY/MM/DD for publication date filter"),
     }),
     execute: async ({ term, retmax, mindate, maxdate }) => {
+      const watchTargetId = assignWatchTargetIdFromTerm(term, context.targets);
       const hits = await searchPubMedAPI(term, apiKey, { retmax, mindate, maxdate });
       for (const h of hits) {
-        if (!seenPmids.has(h.pmid)) {
-          seenPmids.add(h.pmid);
-          collectedHits.push(h);
-        }
+        const key = `${watchTargetId}:${h.pmid}`;
+        if (seenTargetPmid.has(key)) continue;
+        seenTargetPmid.add(key);
+        collectedHits.push({ ...h, watchTargetId });
       }
       return { count: hits.length, totalCollected: collectedHits.length, message: `Found ${hits.length} articles for "${term.slice(0, 50)}...".` };
     },
@@ -153,9 +156,8 @@ PubMed E-utilities: Use the searchPubMed tool with a "term" parameter (PubMed qu
 
   const items: RawItemInput[] = [];
   for (const hit of collectedHits) {
-    const watchTargetId = assignWatchTargetId(hit, context.targets);
     items.push({
-      watchTargetId,
+      watchTargetId: hit.watchTargetId,
       externalId: hit.pmid,
       title: hit.title,
       url: hit.url,

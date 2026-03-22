@@ -72,8 +72,9 @@ export async function runClinicalTrialsAgent(
         const phases = protocol?.designModule?.phases ?? [];
         let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
         if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
-        if (!nctId || seenNctIds.has(nctId)) continue;
-        seenNctIds.add(nctId);
+        const dedupeKey = `${watchTargetId}:${nctId}`;
+        if (!nctId || seenNctIds.has(dedupeKey)) continue;
+        seenNctIds.add(dedupeKey);
         const abstractParts: string[] = [];
         if (overallStatus) abstractParts.push(overallStatus.replace(/_/g, " "));
         if (phases.length > 0) abstractParts.push(phases.map((p) => p.replace(/_/g, " ")).join(", "));

@@ -144,7 +144,27 @@ export default defineSchema({
     .index("by_scanRun", ["scanRunId"])
     .index("by_watchTarget", ["watchTargetId"])
     .index("by_externalId", ["source", "externalId"])
+    .index("by_source_external_watchTarget", ["source", "externalId", "watchTargetId"])
     .index("by_new", ["isNew"]),
+
+  /**
+   * Phase 1 cross-watch-target graph: same source document (external id) appears under two+ monitored targets
+   * in the same workspace (team or solo user scope). Provenance is rawItem ids.
+   */
+  graphCrossTargetEdges: defineTable({
+    /** `team:<id>` or `user:<id>` — must match for both watch targets. */
+    scopeKey: v.string(),
+    watchTargetIdA: v.id("watchTargets"),
+    watchTargetIdB: v.id("watchTargets"),
+    linkKind: v.literal("shared_external_id"),
+    /** e.g. `pubmed:12345678` */
+    linkKey: v.string(),
+    rawItemIds: v.array(v.id("rawItems")),
+    lastSeenAt: v.number(),
+  })
+    .index("by_scope_targets_key", ["scopeKey", "watchTargetIdA", "watchTargetIdB", "linkKey"])
+    .index("by_watchTargetA", ["watchTargetIdA"])
+    .index("by_watchTargetB", ["watchTargetIdB"]),
 
   digestRuns: defineTable({
     scanRunId: v.id("scanRuns"),

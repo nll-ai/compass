@@ -10,7 +10,10 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | **Primary hub.** Same **sidebar tab** layout as Settings (`.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels`): **Targets** (default) and **Recent scans**. **Targets** panel: team hint (no team), scan feedback, **+ Add Watch Target**, then **In your digest** / **Team-wide targets** (when `teams.getMyTeam` is set) or **Watch targets** (solo), per-card digest + scan; **Running scans** (`scans.listRunning`, dismiss via `scans.dismissStuckScanRun`) after the lists. Tabpanels must not use `.stack` on the same node as `[hidden]` (or rely on `.stack[hidden]` in `globals.css`). **Recent scans** panel: **only** `listScanHistory` (completed/failed), loaded when that tab is active and the user has at least one target — month groups (`.scan-history-month`, …), link to `/digest/{id}` when present; **failed** rows with `targetIds` expose **Re-run** — same shared `postManualComprehensiveScan` helper as target cards: `fetch("/api/scan", { method: "POST", credentials: "include", … })` with `period` (row’s daily/weekly; cards use **`daily`** only), `targetIds`, `mode: "comprehensive"` (omits `scanRunId` so the route creates a new run). Row `error` is hidden in the UI once Re-run starts (client state); restored if the fetch fails. Retry feedback is inline on the panel; **no** new Convex hooks for retry. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
+| `app/targets/page.tsx` | **Primary hub.** Same **sidebar tab** layout as Settings (`.settings-layout`, `.settings-sidebar`, `.settings-tablist`, `.settings-tab`, `.settings-panels`): **Targets** (default), **Recent scans**, and **Connections**. **Page-level** (above the tab layout): optional **no-team** card when `teams.getMyTeam` is `null` (loaded), linking to `/settings` to create or join a team — full width, same as [styleguide.md](styleguide.md) §6 Watch Targets. **Targets** panel: scan feedback, **+ Add Watch Target**, then **In your digest** / **Team-wide targets** (when `getMyTeam` is set) or **Watch targets** (solo), per-card digest + scan; **Running scans** (`scans.listRunning`, dismiss via `scans.dismissStuckScanRun`) after the lists. Tabpanels must not use `.stack` on the same node as `[hidden]` (or rely on `.stack[hidden]` in `globals.css`). **Recent scans** panel: **only** `listScanHistory` (completed/failed), loaded when that tab is active and the user has at least one target — month groups (`.scan-history-month`, …), link to `/digest/{id}` when present; **failed** rows with `targetIds` expose **Re-run** — same shared `postManualComprehensiveScan` helper as target cards: `fetch("/api/scan", { method: "POST", credentials: "include", … })` with `period` (row’s daily/weekly; cards use **`daily`** only), `targetIds`, `mode: "comprehensive"` (omits `scanRunId` so the route creates a new run). Row `error` is hidden in the UI once Re-run starts (client state); restored if the fetch fails. Retry feedback is inline on the panel; **no** new Convex hooks for retry. **Connections** panel: `CrossTargetConnectionsPanel` renders when that tab is selected (including **zero** targets — copy explains two targets are needed); `crossTargetGraph.listEdgesForViewer` is subscribed **only** when the tab is active **and** `targets.length >= 1` (skip query otherwise). When edges exist, the panel **auto-selects the first target pair** so **Shared sources** is populated until the user picks another pair. **Refresh graph** → `crossTargetGraph.scheduleReconcileForMyVisibleTargets`. Layout: `.connections-split` responsive grid in `globals.css`. |
+| `components/compass/CrossTargetConnectionsPanel.tsx` | Groups `listEdgesForViewer` rows by watch-target **pair** (one selectable row per pair with edge count + unique source badges); **Shared sources** loads merged `rawItemIds` for the pair and **deduplicates display by URL**; target links use display names. **Refresh graph** → `crossTargetGraph.scheduleReconcileForMyVisibleTargets`. Props: `skip`, `skipEdgesQuery`, `targetCount`. |
+| `convex/crossTargetGraph.ts` | `listEdgesForViewer` (auth: both endpoints in `getVisibleWatchTargetIds`); `scheduleReconcileForMyVisibleTargets` (mutation → scheduler); **`reconcileForWatchTargets`** (internal mutation: upsert `graphCrossTargetEdges`). |
+| `convex/lib/crossTargetLinks.ts` | `linkKeyForRawItem`, `scopeKeyForWatchTarget`, `orderedTargetPair`, `mergeRawItemIds` (cap raw ids per edge). |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/digest/[id]/page.tsx` | Digest detail: list `digestItems`, `SignalOverlay` for **View** on a signal (`components/compass/SignalOverlay.tsx`). Overlay: portal to `document.body`, slide-out panel + dimmed backdrop; on close, exit animation must clear (`transitionend` on panel `transform`, 400ms fallback) so `body` scroll lock is removed; while exiting, `pointer-events: none` on shell/backdrop/panel so opacity-0 layers do not block the page. |
@@ -96,6 +99,27 @@ This document specifies implementation-level details: modules, Convex functions,
   Args: `secret`, `scanRunId`, `error` (string).  
   **When** `secret` matches `SCAN_SECRET` and the run is `pending` or `running`, patches run and incomplete source rows to `failed` (used from `POST /api/scan` catch path).
 
+- **scans.updateScanStatusFromServer** (mutation)  
+  Args: `secret`, `scanRunId`, `status`, optional counters/timestamps.  
+  **When** `status` is set to **`completed`** and the run has **`targetIds`**, schedules **`internal.crossTargetGraph.reconcileForWatchTargets`** (`runAfter(0, …)`) so cross-target edges stay current after scans.
+
+### 2.2.1 Cross-target graph
+
+- **crossTargetGraph.listEdgesForViewer** (query)  
+  Args: optional `{ watchTargetId? }`.  
+  Returns: edges where **both** endpoints are in **`getVisibleWatchTargetIds`**, sorted by `lastSeenAt` desc, with `displayNameA` / `displayNameB`, `linkKey`, `rawItemIds`. Empty when fewer than two visible targets.
+
+- **crossTargetGraph.scheduleReconcileForMyVisibleTargets** (mutation)  
+  Auth: signed-in user. Schedules **`reconcileForWatchTargets`** for all visible watch target ids (backfill / manual refresh).
+
+- **rawItems.getByIds** (query)  
+  Args: `{ ids: Id<"rawItems">[] }`.  
+  Returns: raw item documents whose **`watchTargetId`** is in **`getVisibleWatchTargetIds`** for the signed-in user (filters unknown or non-visible ids); empty array if not signed in. Used by **`CrossTargetConnectionsPanel`** (**Shared sources**: merged `rawItemIds` for the selected pair, then **dedupe by URL** in the UI) and **`SignalOverlay`**.
+
+- **rawItems.getExistingExternalIdsByWatchTargetFromServer** (query)  
+  Args: `secret`, `sources[]`, `watchTargetIds[]`.  
+  Returns: `Record<watchTargetId, Record<source, externalId[]>>` for the scan pipeline.
+
 ### 2.3 Global digest schedule (Settings)
 
 - **userDigestSchedule.get** (query) — current user’s row or null.  
@@ -150,6 +174,7 @@ This document specifies implementation-level details: modules, Convex functions,
 - **digestRuns.getBySourceLinksHashInternal** (internal query) — dedupe digest insert by `sourceLinksHash` (used by `digestGenerate` action).
 - **digestItems.listByDigestRunInternal** (internal query) — all items for a digest run (email).
 - **scans.getScanRun** (internal query) — get scan run by id.
+- **crossTargetGraph.reconcileForWatchTargets** (internal mutation) — args `{ watchTargetIds }`; walks raw items for seed targets, groups by `source:externalId`, upserts **`graphCrossTargetEdges`** for pairs in the same **`scopeKey`** (`team:<id>` or `user:<id>`).
 - **scans.reconcileStaleScanRuns** (internal mutation) — stale pending/running scan cleanup (cron).
 - **watchTargets.getByIdsInternal** (internal query) — get watch targets by ids (no auth).
 - **users.getUserById** (internal query) — get user by id (no auth).
@@ -173,7 +198,7 @@ This document specifies implementation-level details: modules, Convex functions,
 - **Request body:** `scanRunId?`, `period` ("daily" | "weekly"), `targetIds?`, `mode?` ("latest" | "comprehensive"), `sources?`.
   - `mode`: Defaults to "latest" if unspecified; UI-initiated scans always send "comprehensive" per R-SCAN-UI-2.
   - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
-- **Deduplication:** The endpoint fetches `existingExternalIdsBySource` before running sources and filters duplicates during `upsertRawItemsFromServer`, so only new items are stored and counted in `newFound`.
+- **Deduplication:** The endpoint fetches **`rawItems.getExistingExternalIdsByWatchTargetFromServer`** (per `watchTargetId`, per source) before running sources. **`upsertRawItemsFromServer`** inserts only when no row exists for the same **`source` + `externalId` + `watchTargetId`** (index `by_source_external_watchTarget`), so the same document can exist once per target and cross-target edges can be derived. `newFound` counts newly inserted rows.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
 - **On uncaught errors** after a `scanRunId` is known, calls **`scans.markScanRunFailedFromServer`** so the run (and any still-incomplete source rows) is not left `running` indefinitely.
 - **SEC EDGAR:** Agent path fetches filing content and summarizes for watch targets; procedural fallback uses `enrichEdgarItemsWithSummaries` (lib/scan/sources/edgar-agent) to fetch filing text and produce summaries for up to 15 items. Summaries are substantive (2–4 sentences on business/pipeline/clinical/regulatory disclosures), use full target context (name, displayName, type, company, notes, aliases) so person/company/drug targets all get relevant framing, and every successfully summarized filing gets an abstract (no filtering of "no specific disclosure"). Timeline and overlay show these content-based summaries when present.
@@ -207,12 +232,17 @@ This document specifies implementation-level details: modules, Convex functions,
 - **userDigestSchedule:** timezone, daily/weekly fields, `weekdaysOnly?`, `rawDescription?`, last-run date keys, `userId`; index `by_userId`. Sole source of automatic scan timing.
 - **scanRuns:** includes optional `digestNotifyUserIds` for combined digest email recipients.
 
-### 5.3 formatSchedule (lib/formatSchedule.ts)
+### 5.3 rawItems and graphCrossTargetEdges
+
+- **rawItems:** Indexes include **`by_source_external_watchTarget`** on `["source", "externalId", "watchTargetId"]` for per-target dedup; **`by_externalId`** on `["source", "externalId"]` for cross-target sibling lookup. Internal helpers: **`getByExternalIdForTarget`**, **`listBySourceAndExternalId`**. Server upsert uses per-target existence checks.
+- **graphCrossTargetEdges:** `scopeKey`, `watchTargetIdA` / `watchTargetIdB` (ordered), `linkKind` (`shared_external_id`), `linkKey` (e.g. `pubmed:123`), `rawItemIds[]`, `lastSeenAt`. Indexes: **`by_scope_targets_key`**, **`by_watchTargetA`**, **`by_watchTargetB`**.
+
+### 5.4 formatSchedule (lib/formatSchedule.ts)
 
 - **Input:** Object with timezone, `daily*` and `weekly*` schedule booleans/numbers, weekdaysOnly?, rawDescription?.
 - **Output:** Human-readable string, e.g. `"Daily at 9:00. (America/New_York)"` or `"No automatic scans scheduled."`.
 
-### 5.4 AddTargetForm callback
+### 5.5 AddTargetForm callback
 
 - **Props:** `onAdded?: (targetId: Id<"watchTargets">) => void`.
 - **Invocation:** After successful `createTarget(...)`, component calls `onAdded?.(id)` with the returned id.

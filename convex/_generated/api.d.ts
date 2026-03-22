@@ -10,6 +10,7 @@
 
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
+import type * as crossTargetGraph from "../crossTargetGraph.js";
 import type * as digestGenerate from "../digestGenerate.js";
 import type * as digestItems from "../digestItems.js";
 import type * as digestRuns from "../digestRuns.js";
@@ -17,6 +18,7 @@ import type * as digests from "../digests.js";
 import type * as email from "../email.js";
 import type * as feedbackForScan from "../feedbackForScan.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_crossTargetLinks from "../lib/crossTargetLinks.js";
 import type * as lib_digestHelpers from "../lib/digestHelpers.js";
 import type * as lib_formatters from "../lib/formatters.js";
 import type * as lib_slack_builder from "../lib/slack_builder.js";
@@ -51,6 +53,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   chat: typeof chat;
   crons: typeof crons;
+  crossTargetGraph: typeof crossTargetGraph;
   digestGenerate: typeof digestGenerate;
   digestItems: typeof digestItems;
   digestRuns: typeof digestRuns;
@@ -58,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   feedbackForScan: typeof feedbackForScan;
   "lib/auth": typeof lib_auth;
+  "lib/crossTargetLinks": typeof lib_crossTargetLinks;
   "lib/digestHelpers": typeof lib_digestHelpers;
   "lib/formatters": typeof lib_formatters;
   "lib/slack_builder": typeof lib_slack_builder;

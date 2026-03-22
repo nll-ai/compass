@@ -188,6 +188,11 @@ export const updateScanStatusFromServer = mutation({
     const doc = await ctx.db.get(scanRunId);
     if (!doc) return;
     await ctx.db.patch(scanRunId, updates);
+    if (updates.status === "completed" && doc.targetIds != null && doc.targetIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.crossTargetGraph.reconcileForWatchTargets, {
+        watchTargetIds: doc.targetIds,
+      });
+    }
   },
 });
 

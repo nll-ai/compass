@@ -30,8 +30,8 @@ export async function runAllSources(
   options?: ScanOptions & {
     period?: "daily" | "weekly";
     sources?: SourceId[];
-    /** Existing external IDs per source (from DB) so agents prioritize new items. */
-    existingExternalIdsBySource?: Record<string, string[]>;
+    /** Per watch target, external IDs per source (from DB) for per-target dedup. */
+    existingExternalIdsByWatchTarget?: Record<string, Record<string, string[]>>;
     /** Recent thumbs up/down feedback to inject into mission so agents tune retrieval. */
     feedbackForMission?: FeedbackForMission;
   }
@@ -43,18 +43,12 @@ export async function runAllSources(
       ? (options.sources as SourceId[])
       : [...ALL_SOURCE_IDS];
   const mission = buildMission(period, { mode: options?.mode }, targets, options?.feedbackForMission);
-  const existingBySource = options?.existingExternalIdsBySource;
-  const existingExternalIdsBySource: Record<SourceId, Set<string>> | undefined = existingBySource
-    ? (Object.fromEntries(
-        Object.entries(existingBySource).map(([k, v]) => [k, new Set(v)] as [SourceId, Set<string>])
-      ) as Record<SourceId, Set<string>>)
-    : undefined;
   const context: SourceAgentContext = {
     mission,
     targets,
     env,
     scanOptions: options,
-    existingExternalIdsBySource,
+    existingExternalIdsByWatchTarget: options?.existingExternalIdsByWatchTarget,
   };
   const results = await Promise.all(
     sourceIds.map(async (id) => {

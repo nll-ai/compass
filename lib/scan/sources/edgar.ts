@@ -65,7 +65,6 @@ async function runEdgarProcedural(
 ): Promise<SourceResult["items"]> {
   const { targets } = context;
   const items: SourceResult["items"] = [];
-  const seenAccessions = new Set<string>();
   const companiesLimit = getCompaniesLimit(options);
   const filingsLimit = getFilingsLimit(options);
 
@@ -78,6 +77,7 @@ async function runEdgarProcedural(
   const formsWeWant = ["10-K", "10-Q"];
 
   for (const target of targets) {
+    const seenAccessionsForTarget = new Set<string>();
     const companyTerms = target.company
       ? [target.company.trim().toLowerCase(), ...companyNameTokens(target.company)]
       : [];
@@ -117,8 +117,8 @@ async function runEdgarProcedural(
       for (let i = 0; i < Math.min(forms.length, filingsLimit); i++) {
         if (!formsWeWant.includes(forms[i])) continue;
         const acc = accessions[i];
-        if (!acc || seenAccessions.has(acc)) continue;
-        seenAccessions.add(acc);
+        if (!acc || seenAccessionsForTarget.has(acc)) continue;
+        seenAccessionsForTarget.add(acc);
         const pathPart = accessionToPath(acc);
         const primary = primaries[i] ?? `${acc.replace(/-/g, "")}.htm`;
         const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${pathPart}/${primary}`;
