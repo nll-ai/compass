@@ -55,6 +55,9 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 |----|---------|-------------|
 | R-SCAN-1 | Ubiquitous | **The system shall** expose a list of currently pending and running scan runs on the Watch Targets page (`/targets`), scoped to **watch targets the user can see** (owned or same-team, consistent with `scans.listRunning` / `getVisibleWatchTargetIds`), showing for each run: status (pending/running), scheduled or started time, target names, and source progress (e.g. X/Y sources). |
 | R-SCAN-2 | Ubiquitous | **The system shall** update the running-scans list reactively (e.g. via Convex subscription) so that when a run completes or fails, the list reflects the change without a full page reload. |
+| R-SCAN-3 | Event-driven | **When** `POST /api/scan` throws after a scan run id is known, **the system shall** persist that run as **`failed`** (and close out per-source rows still `pending` or `running`) via a server-authenticated Convex mutation so the run does not remain **`running`** after the HTTP 500. |
+| R-SCAN-4 | State-driven | **Where** a scan run remains **`pending`** more than **one hour** after `scheduledFor`, or **`running`** more than **30 minutes** after `startedAt` (or `scheduledFor` if `startedAt` is unset), **the system shall** mark it **`failed`** with a system explanation and close incomplete per-source rows via scheduled reconciliation (Convex cron every **15 minutes**). |
+| R-SCAN-5 | Event-driven | **When** the user dismisses a pending or running scan from the Watch Targets **Running scans** list, **the system shall** mark that run **`failed`** with a user-dismiss explanation and remove it from the pending/running list, subject to the same visibility rules as `scans.listRunning`. |
 
 ---
 

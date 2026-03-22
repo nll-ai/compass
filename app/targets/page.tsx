@@ -243,7 +243,9 @@ export default function TargetsPage() {
   const runningScans = useQuery(api.scans.listRunning, skipQueries ? "skip" : {});
   const subscribe = useMutation(api.targetSubscriptions.subscribe);
   const unsubscribe = useMutation(api.targetSubscriptions.unsubscribe);
+  const dismissStuckScan = useMutation(api.scans.dismissStuckScanRun);
   const [scanningIds, setScanningIds] = useState<Set<Id<"watchTargets">>>(new Set());
+  const [dismissingRunId, setDismissingRunId] = useState<Id<"scanRuns"> | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState<string | null>(null);
 
@@ -354,25 +356,63 @@ export default function TargetsPage() {
                   key={run._id}
                   style={{
                     display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    gap: "0.5rem 1rem",
+                    flexDirection: "column",
+                    gap: "0.35rem",
                     padding: "0.5rem 0",
                     borderBottom: "1px solid var(--border, #e5e7eb)",
                   }}
                 >
-                  <span
+                  <div
                     style={{
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      color: run.status === "running" ? "var(--link, #2563eb)" : "var(--muted, #6b7280)",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.5rem 0.75rem",
                     }}
                   >
-                    {run.status === "running" ? "Running" : "Pending"}
-                  </span>
-                  <span className="muted" style={{ fontSize: "0.85rem" }}>{time}</span>
-                  <span className="muted" style={{ fontSize: "0.85rem" }}>{targetNames}</span>
-                  <span className="muted" style={{ fontSize: "0.85rem", marginLeft: "auto" }}>{progress}</span>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem 1rem", minWidth: 0 }}>
+                      <span
+                        style={{
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          color: run.status === "running" ? "var(--link, #2563eb)" : "var(--muted, #6b7280)",
+                        }}
+                      >
+                        {run.status === "running" ? "Running" : "Pending"}
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.85rem" }}>{time}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="button-secondary-compact"
+                        disabled={dismissingRunId === run._id}
+                        aria-label={`Dismiss stuck scan: ${targetNames}`}
+                        onClick={async () => {
+                          setScanError(null);
+                          setDismissingRunId(run._id);
+                          try {
+                            const result = await dismissStuckScan({ scanRunId: run._id });
+                            if (!result.ok && result.reason === "already_finished") {
+                              // Run completed or failed between list render and dismiss; list will update.
+                              return;
+                            }
+                          } catch (e) {
+                            setScanError(e instanceof Error ? e.message : String(e));
+                          } finally {
+                            setDismissingRunId(null);
+                          }
+                        }}
+                      >
+                        {dismissingRunId === run._id ? "Dismissing…" : "Dismiss"}
+                      </button>
+                      <span className="muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>{progress}</span>
+                    </div>
+                  </div>
+                  <p className="muted" style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.45 }}>
+                    {targetNames}
+                  </p>
                 </li>
               );
             })}

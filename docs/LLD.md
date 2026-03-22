@@ -10,7 +10,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 | Path | Purpose |
 |------|---------|
-| `app/targets/page.tsx` | **Primary hub.** Team-aware list (`listAll` with `subscribed`, `creatorLabel`), **In digest** checkbox (`targetSubscriptions`), sections for subscribed vs other team targets when `teams.getMyTeam` is set, per-card digest + scan button, **Running scans** via `scans.listRunning`. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
+| `app/targets/page.tsx` | **Primary hub.** Team-aware list (`listAll` with `subscribed`, `creatorLabel`), **In digest** checkbox (`targetSubscriptions`), sections for subscribed vs other team targets when `teams.getMyTeam` is set, per-card digest + scan button, **Running scans** via `scans.listRunning` (row: status + time on the left; **Dismiss** (`.button-secondary-compact`) and source progress on the right; target names on a second line). **Dismiss** → `scans.dismissStuckScanRun`. When `getMyTeam` is `null` (loaded, no team), shows a card linking to `/settings` to create or join a team. |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
 | `app/targets/[id]/page.tsx` | Target detail: run scan, edit target, **Automatic digest timing** card (link to Settings), insights links, source links, signal reports, delete. |
@@ -28,11 +28,12 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/targetSubscriptions.ts` | `subscribe`, `unsubscribe`, `isSubscribed`, `listMySubscribedTargetIds`, `listSubscribersForTarget`, `getSubscribedWatchTargetIdsForUserInternal`. |
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
 | `convex/scanSchedule.ts` | `checkAndTrigger` only (cron: `userDigestSchedule` groups → `scheduleScan` + `digestNotifyUserIds`). |
+| `convex/crons.ts` | Intervals: `check-scan-schedule` (1 min) → `scanSchedule.checkAndTrigger`; `reconcile-stale-scans` (15 min) → `scans.reconcileStaleScanRuns`. |
 | `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; both schedule `internal.email.sendDigestEmail` after insert. |
 | `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, etc. |
 | `convex/users.ts` | `getUserById` (internal). |
 | `convex/email.ts` | `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
-| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (visible targets); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
+| `convex/scans.ts` | `listRunning`, `listRecent`, `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
 | `convex/digestItems.ts` | `listByDigestRunInternal` (for email). |
 | `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, `userOwnsTarget` (same-team). No automatic team assignment on sign-in. |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
@@ -74,16 +75,29 @@ This document specifies implementation-level details: modules, Convex functions,
   Args: `{ scanRunId }`.  
   Returns: per-source status rows for that run (auth: visible targets in run).
 
+- **scans.dismissStuckScanRun** (mutation)  
+  Args: `{ scanRunId }`.  
+  Returns: `{ ok: true }`, or `{ ok: false, reason: "already_finished" }` if the run was no longer `pending`/`running` (e.g. completed between list and click).  
+  Auth: signed-in user; all run `targetIds` must be visible.  
+  If the run is `pending` or `running`, patches it to `failed` with a user-dismiss message and marks any per-source rows still `pending` or `running` as `failed`. Otherwise throws **`ConvexError`** with a short user-facing message (e.g. not signed in, not found). Unexpected DB errors are wrapped in **`ConvexError`** so the client shows a message instead of a generic server error.
+
+- **scans.markScanRunFailedFromServer** (mutation)  
+  Args: `secret`, `scanRunId`, `error` (string).  
+  **When** `secret` matches `SCAN_SECRET` and the run is `pending` or `running`, patches run and incomplete source rows to `failed` (used from `POST /api/scan` catch path).
+
 ### 2.3 Global digest schedule (Settings)
 
 - **userDigestSchedule.get** (query) — current user’s row or null.  
 - **userDigestSchedule.set** (mutation) — upsert parsed schedule fields (+ clears last-run keys).  
 - **userDigestSchedule.remove** (mutation) — delete row.
 
-### 2.4 Cron digest schedule
+### 2.4 Cron digest schedule and stale scans
 
 - **scanSchedule.checkAndTrigger** (internal mutation)  
   Evaluates **`userDigestSchedule` only** (grouped team + timezone + slot, or per-user when no team); calls `scheduleScan` with merged `targetIds` and `digestNotifyUserIds`. No per-target table.
+
+- **scans.reconcileStaleScanRuns** (internal mutation)  
+  No args. Finds `scanRuns` with status `pending` where `now - scheduledFor` exceeds **1 hour** (`STALE_PENDING_SCAN_MS`), or `running` where `now - (startedAt ?? scheduledFor)` exceeds **30 minutes** (`STALE_RUNNING_SCAN_MS`); marks each stale run `failed` with a system message and closes incomplete `scanSourceStatus` rows via `failScanRunWithSources`. Invoked on a **15-minute** cron (`reconcile-stale-scans`).
 
 ### 2.5 Teams and subscriptions
 
@@ -125,6 +139,7 @@ This document specifies implementation-level details: modules, Convex functions,
 - **digestRuns.getBySourceLinksHashInternal** (internal query) — dedupe digest insert by `sourceLinksHash` (used by `digestGenerate` action).
 - **digestItems.listByDigestRunInternal** (internal query) — all items for a digest run (email).
 - **scans.getScanRun** (internal query) — get scan run by id.
+- **scans.reconcileStaleScanRuns** (internal mutation) — stale pending/running scan cleanup (cron).
 - **watchTargets.getByIdsInternal** (internal query) — get watch targets by ids (no auth).
 - **users.getUserById** (internal query) — get user by id (no auth).
 - **targetSubscriptions.getSubscribedWatchTargetIdsForUserInternal** (internal query).
@@ -149,6 +164,7 @@ This document specifies implementation-level details: modules, Convex functions,
   - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
 - **Deduplication:** The endpoint fetches `existingExternalIdsBySource` before running sources and filters duplicates during `upsertRawItemsFromServer`, so only new items are stored and counted in `newFound`.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
+- **On uncaught errors** after a `scanRunId` is known, calls **`scans.markScanRunFailedFromServer`** so the run (and any still-incomplete source rows) is not left `running` indefinitely.
 - **SEC EDGAR:** Agent path fetches filing content and summarizes for watch targets; procedural fallback uses `enrichEdgarItemsWithSummaries` (lib/scan/sources/edgar-agent) to fetch filing text and produce summaries for up to 15 items. Summaries are substantive (2–4 sentences on business/pipeline/clinical/regulatory disclosures), use full target context (name, displayName, type, company, notes, aliases) so person/company/drug targets all get relevant framing, and every successfully summarized filing gets an abstract (no filtering of "no specific disclosure"). Timeline and overlay show these content-based summaries when present.
 
 ### 4.3 POST /api/targets/lookup

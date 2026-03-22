@@ -55,7 +55,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ### 4.2 Scan visibility and schedules
 
-- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail.
+- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail. Users may **dismiss** a stuck run (`scans.dismissStuckScanRun`), which marks it failed so it leaves the list. **Stale reconciliation:** a Convex cron runs `scans.reconcileStaleScanRuns` **every 15 minutes**; runs left `pending` more than **1 hour** after `scheduledFor`, or `running` more than **30 minutes** after `startedAt` (or `scheduledFor` if `startedAt` is unset), are marked `failed` with a system message and incomplete per-source rows are closed out (covers Next.js timeouts, crashes, or a stuck bridge). **`POST /api/scan`** marks the run (and incomplete sources) `failed` when the handler throws after a run id exists, so the DB does not stay `running` after a 500.
 - **Digest schedule (Settings only):** Optional one row per user in `userDigestSchedule`. Cron `checkAndTrigger` evaluates **only** these rows, groups due users by **team** + local time slot (users without a `teamId` are keyed **per user**, not merged across accounts), merges subscribed active targets and notify users, and calls `scheduleScan` once with `digestNotifyUserIds` so teammates at the same slot share one scan. There is **no** per-target automatic schedule table or cron path.
 - **Settings UI:** Sidebar tabs (**Team** | **Digest schedule**); default tab **Team**; `?teamInvite=` handled under `Suspense`, with success/error surfaced on the Team tab. Digest panel: natural language + timezone → `/api/schedule/parse` → `userDigestSchedule.set` / `remove`. **Layout, ARIA, and breakpoints:** [`docs/styleguide.md`](styleguide.md) §6 (Settings page).
 - **Target detail:** Explains that automatic timing is configured on Settings; manual “Run scan” remains on the target page.
@@ -121,7 +121,7 @@ flowchart TB
     Digests[digests]
     EmailAction[email.sendDigestEmail]
     InviteEmail[email.sendTeamInviteEmail]
-    Cron[checkAndTrigger cron]
+    Cron[crons: schedule + stale scans]
   end
 
   subgraph external [External]
@@ -137,6 +137,7 @@ flowchart TB
   TargetsPage -->|listAll, subscribe| WT
   TargetsPage -->|listRunning| scanRuns
   Cron -->|userDigestSchedule only| UDS
+  Cron -->|reconcile stale scanRuns| scanRuns
   Cron -->|scheduleScan| ScanAPI[POST /api/scan]
   Digests -->|scheduler.runAfter| EmailAction
   EmailAction -->|fetch| Resend
@@ -153,7 +154,7 @@ Detailed CLI commands and log line references live in **LLD §8**. Use this sect
 - **Convex logs** (`npx convex logs`, optionally `--prod` for production deployment) show whether the cron ran, `scans:callScanApi` was invoked, and HTTP status from your app.
 - **Missing `APP_URL` or `SCAN_SECRET` in Convex** → Convex never successfully calls Next.js; set both in Convex env; **`SCAN_SECRET`** must match Next.js / Vercel.
 - **`callScanApi` 401** → secret mismatch between Convex and Next.js.
-- **`callScanApi` 500** → Next.js threw; the real message is in the **Next.js** process (terminal running `npm run dev` or **Vercel function logs**), typically a line like `[POST /api/scan] error:`.
+- **`callScanApi` 500** → Next.js threw; the real message is in the **Next.js** process (terminal running `npm run dev` or **Vercel function logs**), typically a line like `[POST /api/scan] error:`. The scan run should be patched to **`failed`** when the route could associate an error with a `scanRunId`; if something still shows as running, the **stale-scan cron** (every **15 minutes**) or **Dismiss** on Watch Targets clears it.
 - **Nothing runs at the chosen time** → Confirm a **`userDigestSchedule`** row for the user, timezone/slot, and (team mode) **subscribed** active targets or (solo) owned active targets.
 
 ### 8.2 Digest email (production)

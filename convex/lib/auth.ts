@@ -18,7 +18,7 @@ export async function getIdentity(ctx: AnyCtx) {
  * Returns null if not authenticated.
  * Does not create the user; use getOrCreateUserId in mutations for that.
  */
-export async function getUserIdFromIdentity(ctx: QueryCtx): Promise<Id<"users"> | null> {
+export async function getUserIdFromIdentity(ctx: AnyCtx): Promise<Id<"users"> | null> {
   const identity = await getIdentity(ctx);
   if (!identity) return null;
   const workosId = identity.subject;
@@ -101,7 +101,7 @@ export async function userOwnsTarget(
  */
 /** Watch targets the user may see: owned plus same-team (when teamId set). */
 export async function getVisibleWatchTargetIds(
-  ctx: QueryCtx,
+  ctx: AnyCtx,
   userId: Id<"users">,
 ): Promise<Set<Id<"watchTargets">>> {
   const visible = new Set<Id<"watchTargets">>();

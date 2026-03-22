@@ -1,12 +1,49 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { ALL_SOURCE_IDS, SOURCES_TOTAL } from "./lib/sourceIds";
 import { getOrCreateUserId, getUserIdFromIdentity, getVisibleWatchTargetIds } from "./lib/auth";
 
 function checkScanSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
+}
+
+/** Above Next.js `maxDuration` (300s) with margin for slow final writes. */
+const STALE_RUNNING_SCAN_MS = 30 * 60 * 1000;
+/** Pending run never picked up by `/api/scan` (e.g. bridge misconfiguration). */
+const STALE_PENDING_SCAN_MS = 60 * 60 * 1000;
+
+async function failScanRunWithSources(
+  ctx: MutationCtx,
+  scanRunId: Id<"scanRuns">,
+  errorMessage: string,
+  now: number,
+): Promise<boolean> {
+  const run = await ctx.db.get(scanRunId);
+  if (!run) return false;
+  if (run.status !== "pending" && run.status !== "running") return false;
+  const err = errorMessage.slice(0, 2000);
+  await ctx.db.patch(scanRunId, {
+    status: "failed",
+    completedAt: now,
+    error: err,
+  });
+  const rows = await ctx.db
+    .query("scanSourceStatus")
+    .withIndex("by_scanRun", (q) => q.eq("scanRunId", scanRunId))
+    .collect();
+  const sourceErr = errorMessage.slice(0, 500);
+  for (const row of rows) {
+    if (row.status === "pending" || row.status === "running") {
+      await ctx.db.patch(row._id, {
+        status: "failed",
+        completedAt: now,
+        error: sourceErr,
+      });
+    }
+  }
+  return true;
 }
 
 /** List scan runs that are pending or running, scoped to the current user's targets. */
@@ -146,6 +183,18 @@ export const updateSourceStatusFromServer = mutation({
   },
 });
 
+export const markScanRunFailedFromServer = mutation({
+  args: {
+    secret: v.string(),
+    scanRunId: v.id("scanRuns"),
+    error: v.string(),
+  },
+  handler: async (ctx, { secret, scanRunId, error }) => {
+    if (!checkScanSecret(secret)) return;
+    await failScanRunWithSources(ctx, scanRunId, error, Date.now());
+  },
+});
+
 /** Internal: get scan run by id (no auth). Used by digest pipeline and cron. */
 export const getScanRun = internalQuery({
   args: { id: v.id("scanRuns") },
@@ -185,6 +234,41 @@ export const getSourceStatuses = query({
       .query("scanSourceStatus")
       .withIndex("by_scanRun", (q) => q.eq("scanRunId", scanRunId))
       .collect();
+  },
+});
+
+export const dismissStuckScanRun = mutation({
+  args: { scanRunId: v.id("scanRuns") },
+  returns: v.union(
+    v.object({ ok: v.literal(true) }),
+    v.object({ ok: v.literal(false), reason: v.literal("already_finished") }),
+  ),
+  handler: async (ctx, { scanRunId }) => {
+    const userId = await getUserIdFromIdentity(ctx);
+    if (!userId) {
+      throw new ConvexError("Sign in required to dismiss a scan.");
+    }
+    const run = await ctx.db.get(scanRunId);
+    if (!run?.targetIds?.length) {
+      throw new ConvexError("Scan not found.");
+    }
+    const visible = await getVisibleWatchTargetIds(ctx, userId);
+    if (!run.targetIds.every((id) => visible.has(id))) {
+      throw new ConvexError("Scan not found.");
+    }
+    let ok: boolean;
+    try {
+      ok = await failScanRunWithSources(ctx, scanRunId, "Dismissed from Watch Targets.", Date.now());
+    } catch (cause) {
+      console.error("dismissStuckScanRun: failScanRunWithSources", cause);
+      throw new ConvexError(
+        "Could not dismiss this scan. Try again in a moment, or wait for the list to refresh.",
+      );
+    }
+    if (!ok) {
+      return { ok: false as const, reason: "already_finished" as const };
+    }
+    return { ok: true as const };
   },
 });
 
@@ -325,6 +409,46 @@ export const updateSourceStatus = internalMutation({
       ...(args.completedAt !== undefined && { completedAt: args.completedAt }),
       ...(args.error !== undefined && { error: args.error }),
     });
+  },
+});
+
+export const reconcileStaleScanRuns = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    let reconciled = 0;
+    const pending = await ctx.db
+      .query("scanRuns")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+    const running = await ctx.db
+      .query("scanRuns")
+      .withIndex("by_status", (q) => q.eq("status", "running"))
+      .collect();
+    for (const run of pending) {
+      if (now - run.scheduledFor > STALE_PENDING_SCAN_MS) {
+        const did = await failScanRunWithSources(
+          ctx,
+          run._id,
+          "Scan was never started or the pipeline did not report completion.",
+          now,
+        );
+        if (did) reconciled += 1;
+      }
+    }
+    for (const run of running) {
+      const t0 = run.startedAt ?? run.scheduledFor;
+      if (now - t0 > STALE_RUNNING_SCAN_MS) {
+        const did = await failScanRunWithSources(
+          ctx,
+          run._id,
+          "Scan timed out or was interrupted before completion.",
+          now,
+        );
+        if (did) reconciled += 1;
+      }
+    }
+    return { reconciled };
   },
 });
 

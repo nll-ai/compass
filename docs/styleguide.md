@@ -158,6 +158,8 @@ border: 1px solid #374151
 cursor: pointer
 ```
 
+**Compact secondary (outline):** `.button-secondary-compact` in `app/globals.css` — same treatment with smaller type/padding for dense rows (e.g. **Dismiss** beside source progress on Watch Targets → Running scans).
+
 **Ghost button (text-only):**
 ```
 background: none
@@ -170,6 +172,8 @@ cursor: pointer
 transition: color 0.15s
 ```
 On hover: `color: #111827`.
+
+**Implemented variant:** `.button-ghost` in `app/globals.css` matches the ghost spec (e.g. **Dismiss** on Watch Targets → Running scans).
 
 **Disabled state:** `opacity: 0.5; cursor: not-allowed` (or `cursor: wait` when loading).
 
