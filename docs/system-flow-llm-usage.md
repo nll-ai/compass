@@ -114,7 +114,7 @@ These sources try an **LLM + tools** path first when `OPENAI_API_KEY` is set (an
 flowchart TD
   R["Source runner (PubMed, CT.gov, EDGAR)"] --> Gate{"Agent enabled? (OPENAI_API_KEY + source prerequisites)"}
   Gate -->|no| P["Procedural path: fixed queries from target fields"]
-  Gate -->|yes| A["LLM + tools: queries, dates, expansion"]
+  Gate -->|yes| A["LLM + tools: queries & expansion (PubMed publication dates: server-side pdat)"]
   A --> Any{"Any candidate items?"}
   Any -->|yes| Out["Candidates → relevance, enrich, upsert"]
   Any -->|no| P
@@ -125,7 +125,7 @@ flowchart TD
 
 | Source | LLM shapes search queries? | Procedural fallback if agent returns nothing | Notable gates |
 |--------|----------------------------|-----------------------------------------------|---------------|
-| **PubMed** | Yes — multi-step `searchPubMed` tool calls (`gpt-4o-mini`) | Yes — `buildPubmedQuery` in `lib/scan/sources/pubmed.ts` | Agent path needs `PUBMED_API_KEY` and `OPENAI_API_KEY` |
+| **PubMed** | Yes — AI SDK `ToolLoopAgent` with `searchPubMed` (`term` / `retmax`); **`esearch` `mindate`/`maxdate`** use NCBI **`YYYY/MM/DD`** + `datetype=pdat`, from `scanOptions.pubmedPubDate` (not the LLM) | Yes — `buildPubmedQuery` in `lib/scan/sources/pubmed.ts` | Agent path needs `PUBMED_API_KEY` and `OPENAI_API_KEY` |
 | **ClinicalTrials.gov** | Yes — agent + tools | Yes — single API query from name / displayName / alias | Agent needs `OPENAI_API_KEY` |
 | **SEC EDGAR** | Yes — full-text + company tools; optional LLM-derived company name | Yes — token / company-list matching in `lib/scan/sources/edgar.ts` | Procedural hits can still get LLM filing summaries when `OPENAI_API_KEY` is set |
 | **Exa** | Yes — `searchExa` tool | No | Needs `EXA_API_KEY` and `OPENAI_API_KEY` |

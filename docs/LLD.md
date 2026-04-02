@@ -195,13 +195,24 @@ This document specifies implementation-level details: modules, Convex functions,
 ### 4.2 POST /api/scan
 
 - Used by Convex `callScanApi`, manual **Run scan** from the UI (e.g. target cards on `/targets`, target detail), and **Re-run** on failed rows in **Recent scans** (same body shape as manual UI scans: no `scanRunId` → `createRunForServer` allocates a **new** run).  
-- **Request body:** `scanRunId?`, `period` ("daily" | "weekly"), `targetIds?`, `mode?` ("latest" | "comprehensive"), `sources?`.
+- **Request body:** `scanRunId?`, `period` ("daily" | "weekly"), `targetIds?`, `mode?` ("latest" | "comprehensive"), `sources?`, `pubmedPubDate?`.
   - `mode`: Defaults to "latest" if unspecified; UI-initiated scans always send "comprehensive" per R-SCAN-UI-2.
   - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
+  - `pubmedPubDate` (optional, PubMed only): `{ mode: "contemporaneous" | "unbounded", years?: number }`. Omitted → **contemporaneous**, last **3** years through **today** (UTC), applied server-side to PubMed `esearch` as NCBI **`YYYY/MM/DD`** with `datetype=pdat`. **`unbounded`** omits date filters. The PubMed tool-loop agent does **not** supply dates (avoids LLM-invented ranges); see `lib/scan/pubmed-esearch-dates.ts`.
 - **Deduplication:** The endpoint fetches **`rawItems.getExistingExternalIdsByWatchTargetFromServer`** (per `watchTargetId`, per source) before running sources. **`upsertRawItemsFromServer`** inserts only when no row exists for the same **`source` + `externalId` + `watchTargetId`** (index `by_source_external_watchTarget`), so the same document can exist once per target and cross-target edges can be derived. `newFound` counts newly inserted rows.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
+- **Source-agent orchestration (AI SDK):** PubMed agent execution uses AI SDK **`ToolLoopAgent`** (`lib/scan/sources/pubmed-agent.ts`) with a typed `searchPubMed` tool and step stop condition; other source agents continue to use `generateText` + `tool` multi-step loops with equivalent stop conditions.
 - **On uncaught errors** after a `scanRunId` is known, calls **`scans.markScanRunFailedFromServer`** so the run (and any still-incomplete source rows) is not left `running` indefinitely.
 - **SEC EDGAR:** Agent path fetches filing content and summarizes for watch targets; procedural fallback uses `enrichEdgarItemsWithSummaries` (lib/scan/sources/edgar-agent) to fetch filing text and produce summaries for up to 15 items. Summaries are substantive (2–4 sentences on business/pipeline/clinical/regulatory disclosures), use full target context (name, displayName, type, company, notes, aliases) so person/company/drug targets all get relevant framing, and every successfully summarized filing gets an abstract (no filtering of "no specific disclosure"). Timeline and overlay show these content-based summaries when present.
+
+### 4.2.1 POST /api/scan/pubmed
+
+- **Purpose:** Programmatic PubMed-only scan for a single existing watch target (same auth and scan pipeline as `POST /api/scan`, implemented via shared `lib/scan/runScanPipeline.ts`).
+- **Auth:** Same as `POST /api/scan` — `Authorization: Bearer <SCAN_SECRET>` or same-origin browser request; `SCAN_SECRET` must match Convex.
+- **Request body:** `{ watchTargetId: string, period?: "daily" | "weekly", mode?: "latest" | "comprehensive", pubmedPubDate?: { mode: "contemporaneous" | "unbounded", years?: number } }`.
+  - Defaults: `period` → `"daily"`, `mode` → `"comprehensive"` (aligned with UI “Run scan”). `pubmedPubDate` omitted → same as `POST /api/scan` (contemporaneous, 3 years).
+  - Internally runs with `sources: ["pubmed"]` and `targetIds: [watchTargetId]`.
+- **Response (200):** Same shape as `POST /api/scan` success: `{ ok: true, scanRunId, totalFound, newFound, failedSources? }`.
 
 ### 4.3 POST /api/targets/lookup
 

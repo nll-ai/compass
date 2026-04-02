@@ -1,6 +1,7 @@
 import type { ScanTarget, SourceResult, ScanOptions, TherapeuticArea } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
+import { applyPubmedEsearchDateParams } from "../pubmed-esearch-dates";
 import { runPubMedAgent } from "./pubmed-agent";
 
 /** PubMed: 3/sec without key, 10/sec with API key. Throttle ~100–350ms between requests in comprehensive. */
@@ -45,7 +46,15 @@ async function runPubmedProcedural(context: SourceAgentContext): Promise<SourceR
     if (throttleMs > 0) await sleep(throttleMs);
     const query = buildPubmedQuery(target);
     if (!query) continue;
-    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&retmode=json${apiKey ? `&api_key=${apiKey}` : ""}`;
+    const searchParams = new URLSearchParams({
+      db: "pubmed",
+      term: query,
+      retmax: String(retmax),
+      retmode: "json",
+    });
+    if (apiKey) searchParams.set("api_key", apiKey);
+    applyPubmedEsearchDateParams(searchParams, options);
+    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${searchParams.toString()}`;
     const searchRes = await fetchWithRetry(searchUrl);
     if (!searchRes.ok) {
       if (items.length > 0) return { items, error: `PubMed esearch: ${searchRes.status}` };
