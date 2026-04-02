@@ -10,6 +10,7 @@ export default authkitMiddleware({
       "/sw.js",
       "/api/convex-token",
       "/api/scan",
+      "/api/scan/pubmed",
       "/_next/static/:path*",
       "/_next/image",
       "/favicon.ico",

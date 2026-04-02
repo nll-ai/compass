@@ -12,7 +12,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 - **Web app (Next.js App Router):** Watch Targets (hub), target detail, settings, digest/timeline views, chat. Navigation: Watch Targets | Chat | Settings. Home (`/`) redirects to `/targets` for signed-in users. Dashboard and History are legacy redirects to `/targets`.
 - **Backend (Convex):** Auth, persistence, queries/mutations, scheduled jobs (cron), and server-side actions (e.g. HTTP outbound).
-- **Scan pipeline:** Next.js API route (`POST /api/scan`) plus Convex mutations for run lifecycle; source agents run in-process or via external APIs (PubMed, ClinicalTrials.gov, EDGAR, Exa, etc.).
+- **Scan pipeline:** Next.js API routes **`POST /api/scan`** (full or filtered sources) and **`POST /api/scan/pubmed`** (PubMed-only, one watch target; same server auth as `/api/scan`), plus Convex mutations for run lifecycle; source agents run in-process or via external APIs (PubMed, ClinicalTrials.gov, EDGAR, Exa, etc.). Shared implementation: `lib/scan/runScanPipeline.ts`, `lib/scan/scanAuth.ts`.
 - **Digest pipeline:** After a scan completes with new items, digest content is generated (in API route or Convex action) and stored; side effects (Slack, email) are triggered via Convex scheduler.
 
 ---
@@ -38,7 +38,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 |-----------|----------------|
 | **Frontend (app/, components/)** | Pages, forms, navigation. All data via Convex React hooks. |
 | **Convex (convex/)** | Schema, queries, mutations, internal mutations, actions, crons. Single deployment unit. |
-| **Scan API (app/api/scan)** | Accepts scan requests (manual or from Convex), runs source agents, writes raw items and digest. |
+| **Scan API (`app/api/scan`, `app/api/scan/pubmed`)** | **`POST /api/scan`:** manual UI, Re-run, and Convex `callScanApi`. **`POST /api/scan/pubmed`:** programmatic PubMed-only scan for one `watchTargetId` (optional `period`, `mode`, `pubmedPubDate`); same `SCAN_SECRET` / Bearer auth. PubMed `esearch` publication-date filters are server-side (`contemporaneous` last N years vs `unbounded`), not LLM-supplied. Both use shared pipeline code; run source agents, write raw items and digest when applicable. |
 | **Cross-target graph (Convex)** | After a successful scan, reconciles `graphCrossTargetEdges` when the same `source` + `externalId` appears under two or more watch targets in the same workspace (`team` or `user` scope). The Watch Targets hub **Connections** tab subscribes to **`crossTargetGraph.listEdgesForViewer` only** when that tab is active **and** the hub has **at least one** loaded watch target; it **groups** edges by **target pair**, **auto-selects the first pair** when edges exist, loads evidence via **`rawItems.getByIds`**, and **deduplicates** shared links **by URL** in the Shared sources column. |
 | **Schedule parse API (app/api/schedule/parse)** | Parses natural-language schedule strings into structured daily/weekly/timezone for Convex. |
 | **Resend (external)** | Email delivery for digest notifications; invoked from Convex action via REST API. |
@@ -56,7 +56,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ### 4.2 Scan visibility and schedules
 
-- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail. Users may **dismiss** a stuck run (`scans.dismissStuckScanRun`), which marks it failed so it leaves the list. **Stale reconciliation:** a Convex cron runs `scans.reconcileStaleScanRuns` **every 15 minutes**; runs left `pending` more than **1 hour** after `scheduledFor`, or `running` more than **30 minutes** after `startedAt` (or `scheduledFor` if `startedAt` is unset), are marked `failed` with a system message and incomplete per-source rows are closed out (covers Next.js timeouts, crashes, or a stuck bridge). **`POST /api/scan`** marks the run (and incomplete sources) `failed` when the handler throws after a run id exists, so the DB does not stay `running` after a 500.
+- **Running scans:** The **Watch Targets** page (`/targets`) is the control center for scan status. It shows all scan runs that are pending or running for targets the user can see (owned or same-team), via `scans.listRunning`. Each row displays status, scheduled/started time, target names, and source progress (e.g. 3/7 sources). The list updates reactively as runs complete or fail. Users may **dismiss** a stuck run (`scans.dismissStuckScanRun`), which marks it failed so it leaves the list. **Stale reconciliation:** a Convex cron runs `scans.reconcileStaleScanRuns` **every 15 minutes**; runs left `pending` more than **1 hour** after `scheduledFor`, or `running` more than **30 minutes** after `startedAt` (or `scheduledFor` if `startedAt` is unset), are marked `failed` with a system message and incomplete per-source rows are closed out (covers Next.js timeouts, crashes, or a stuck bridge). **`POST /api/scan`** and **`POST /api/scan/pubmed`** mark the run (and incomplete sources) `failed` when the handler throws after a run id exists, so the DB does not stay `running` after a 500.
 - **Recent scans (history):** On the same page, **completed** and **failed** scan runs for visible targets are loaded via `scans.listScanHistory` (newest by `completedAt` / `startedAt` / `scheduledFor`) **only when** the user opens the **Recent scans** sidebar tab **and** has at least one watch target (the client skips the query on the default tab). They appear in that tab (not the default tab); see styleguide. Rows are grouped by **calendar month** (month label, see styleguide). Each row shows outcome, time, period (daily/weekly), target names, counts (or failure reason), and **View digest** when a `digestRuns` row exists for that `scanRunId`. **Failed** rows with `targetIds` offer **Re-run**: clicking it **hides** that row’s stored failure text in the UI immediately (the history document is unchanged); same-origin **`POST /api/scan`** (browser `fetch`, no `scanRunId`) with that run’s `period` and `targetIds` and `mode: "comprehensive"` — same comprehensive scan path as manual **Run scan** from target cards (cards on this hub always send **`daily`** period; retry preserves the row’s **daily** or **weekly**). The route creates a **new** run; feedback is inline on the panel; if the request fails, the row’s failure text is shown again. No new Convex client API for retry.
 
 **Watch Targets hub (scan blocks, schematic):**
@@ -96,7 +96,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 ### 4.5 Raw-item summaries (timeline and overlay)
 
-- Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD §4.2 (POST /api/scan) and EARS §4.5.
+- Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD §4.2–§4.2.1 (scan routes) and EARS §4.5.
 
 ---
 
@@ -115,7 +115,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 - **Event-driven side effects:** Domain events (e.g. digest created) trigger downstream work via Convex scheduler or internal actions, not inline in the same mutation or API handler. See AGENTS.md § Event-driven side effects.
 - **Auth and scoping:** Convex queries/mutations use `getUserIdFromIdentity` / `getOrCreateUserId` plus `canViewWatchTarget` (see same team) / `getVisibleWatchTargetIds` for visibility. **Watch target writes** (`watchTargets.update` / `remove`) require **`isWatchTargetOwner`** (`userId` on the row). Crons and email resolve recipients via `digestNotifyUserIds`, subscriptions, and target ownership.
-- **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL`, and **`SCAN_SECRET`** (must match Next.js) are set in Convex (e.g. `npx convex env set`). **`APP_URL`** must be a URL Convex can reach when calling `POST /api/scan` (deployed app or tunnel for remote Convex + local Next).
+- **Convex env:** Keys such as `RESEND_API_KEY`, `APP_URL`, `RESEND_FROM_EMAIL`, and **`SCAN_SECRET`** (must match Next.js) are set in Convex (e.g. `npx convex env set`). **`APP_URL`** must be a URL Convex can reach when calling `POST /api/scan` (deployed app or tunnel for remote Convex + local Next). **`POST /api/scan/pubmed`** uses the same **`SCAN_SECRET`** for Bearer auth; scheduled digests still call **`POST /api/scan`** only.
 - **Digest synthesis (product intent):** Keep synthesis concise and factual; group related source records into one signal when appropriate; calibrate significance (`critical` / `high` / `medium` / `low`); avoid generic “strategic implication” text unless specific; track token/cost where implemented.
 - **Risks (design):** API rate limits → backoff and source health; high item volume → cap inputs or staged synthesis; dedup false positives → compare meaningful fields for “changed”; long-running scans → isolated per-source work and runtime budgets.
 
@@ -170,12 +170,13 @@ flowchart TB
 
 Detailed CLI commands and log line references live in **LLD §8**. Use this section as a mental model.
 
-### 8.1 Scheduled scans and `POST /api/scan`
+### 8.1 Scheduled scans and scan HTTP routes
 
-- **Convex logs** (`npx convex logs`, optionally `--prod` for production deployment) show whether the cron ran, `scans:callScanApi` was invoked, and HTTP status from your app.
+- **Convex logs** (`npx convex logs`, optionally `--prod` for production deployment) show whether the cron ran, `scans:callScanApi` was invoked, and HTTP status from your app (**`POST /api/scan`**).
 - **Missing `APP_URL` or `SCAN_SECRET` in Convex** → Convex never successfully calls Next.js; set both in Convex env; **`SCAN_SECRET`** must match Next.js / Vercel.
 - **`callScanApi` 401** → secret mismatch between Convex and Next.js.
 - **`callScanApi` 500** → Next.js threw; the real message is in the **Next.js** process (terminal running `npm run dev` or **Vercel function logs**), typically a line like `[POST /api/scan] error:`. The scan run should be patched to **`failed`** when the route could associate an error with a `scanRunId`; if something still shows as running, the **stale-scan cron** (every **15 minutes**) or **Dismiss** on Watch Targets clears it.
+- **Programmatic PubMed-only:** **`POST /api/scan/pubmed`** uses the same **`SCAN_SECRET`** and shared pipeline; check logs for `[POST /api/scan/pubmed]` on failures (same **`failed`** run semantics as **`POST /api/scan`** once a `scanRunId` exists).
 - **Nothing runs at the chosen time** → Confirm a **`userDigestSchedule`** row for the user, timezone/slot, and (team mode) **subscribed** active targets or (solo) owned active targets.
 
 ### 8.2 Digest email (production)

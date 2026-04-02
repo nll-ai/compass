@@ -3,7 +3,7 @@
  * to discover relevant 10-K/10-Q filings with query generation/expansion.
  */
 
-import { generateObject, generateText, tool } from "ai";
+import { generateObject, generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
@@ -551,7 +551,7 @@ export async function runSECSearchAgent(
   const searchSECFullText = tool({
     description:
       "Search SEC EDGAR full-text for keywords/phrases (e.g. discontinued, clinical trial, terminated, or a company/drug name). Use quoted phrases for exact match. Optional date range and form filter (10-K, 10-Q).",
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().describe("Search query: keywords, quoted phrases, or company/drug name"),
       startDate: z.string().optional().describe("Start date YYYY-MM-DD for filings"),
       endDate: z.string().optional().describe("End date YYYY-MM-DD for filings"),
@@ -574,7 +574,7 @@ export async function runSECSearchAgent(
   const searchSECByCompany = tool({
     description:
       "Get 10-K and 10-Q filings for a specific company by name or ticker (e.g. Genocea, GNCA). Use when you know the company name or ticker.",
-    parameters: z.object({
+    inputSchema: z.object({
       companyOrTicker: z.string().describe("Company name or stock ticker symbol"),
     }),
     execute: async ({ companyOrTicker }) => {
@@ -609,18 +609,11 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
     const result = await generateText({
       model: openai("gpt-4o-mini"),
       tools: { searchSECFullText, searchSECByCompany },
-      maxSteps,
+      stopWhen: stepCountIs(maxSteps),
       prompt,
     });
 
-    const steps = await result.steps;
-    for (const step of steps) {
-      const toolResults = step.toolResults ?? [];
-      for (const tr of toolResults) {
-        const resultData = tr.result as { hits?: SECAgentHit[] } | undefined;
-        if (resultData?.hits) recordHits(resultData.hits);
-      }
-    }
+    void result;
   } catch (_err) {
     // Agent failure: return what we collected so far (may be empty)
   }

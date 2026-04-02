@@ -3,7 +3,7 @@
  * for agentic search with query expansion.
  */
 
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
@@ -42,7 +42,7 @@ export async function runClinicalTrialsAgent(
   const searchClinicalTrials = tool({
     description:
       "Search ClinicalTrials.gov API v2 for studies. queryTerm: search string (e.g. drug name, condition, NCT id). pageSize: max results (default 15). Returns studies with nctId, briefTitle, startDate.",
-    parameters: z.object({
+    inputSchema: z.object({
       queryTerm: z.string().describe("Search term: drug name, target, condition, or trial identifier"),
       pageSize: z.number().min(1).max(50).default(15).describe("Max number of studies to return"),
     }),
@@ -112,7 +112,7 @@ Use the searchClinicalTrials tool with query terms from each watch target (drug 
     await generateText({
       model: openai("gpt-4o-mini"),
       tools: { searchClinicalTrials },
-      maxSteps,
+      stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,
       prompt: "Run clinical trial searches for the watch targets above. Use multiple queries if needed.",
     });

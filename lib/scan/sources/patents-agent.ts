@@ -3,7 +3,7 @@
  * for agentic search with query expansion.
  */
 
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
@@ -52,7 +52,7 @@ export async function runPatentsAgent(
   const searchPatents = tool({
     description:
       "Search PatentsView for patents by keywords (title/abstract). terms: space-separated keywords or phrases (e.g. drug name, gene, compound). size: max results (default 15). PatentsView API returns patent_id, patent_title, patent_abstract, patent_date.",
-    parameters: z.object({
+    inputSchema: z.object({
       terms: z.string().describe("Search terms for patent title/abstract (e.g. drug name, target, compound)"),
       size: z.number().min(1).max(50).default(15).describe("Max number of patents to return"),
     }),
@@ -123,7 +123,7 @@ Use the searchPatents tool with terms derived from each watch target (drug name,
     await generateText({
       model: openai("gpt-4o-mini"),
       tools: { searchPatents },
-      maxSteps,
+      stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,
       prompt: "Run patent searches for the watch targets above. Use multiple queries if needed.",
     });

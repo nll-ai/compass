@@ -3,7 +3,7 @@
  * for agentic search with query expansion.
  */
 
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
@@ -46,7 +46,7 @@ export async function runExaAgent(
   const searchExa = tool({
     description:
       "Search the web for content using Exa AI. Use query to describe what you are looking for (e.g. drug name clinical trial results, company pipeline update). Add scope like 'biopharma clinical' to focus on human drug development. numResults: how many results to return (default 10).",
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().describe("Search query: topic, drug/target name, and optional scope terms (e.g. biopharma clinical)"),
       numResults: z.number().min(1).max(50).default(10).describe("Number of results to return"),
       type: z.enum(["auto", "keyword", "neural"]).optional().describe("Search type: auto, keyword, or neural"),
@@ -119,7 +119,7 @@ Use the searchExa tool with queries that combine watch target names/aliases with
     await generateText({
       model: openai("gpt-4o-mini"),
       tools: { searchExa },
-      maxSteps,
+      stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,
       prompt: "Run Exa searches for the watch targets above. Use multiple queries if needed.",
     });

@@ -3,12 +3,17 @@
  * to perform agentic search with structured parameters (Zod).
  */
 
-import { generateText, tool } from "ai";
+import { ToolLoopAgent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import type { RawItemInput, ScanTarget, SourceResult } from "../types";
+import type { RawItemInput, ScanTarget, SourceResult, ScanOptions } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
+import {
+  DEFAULT_CONTEMPORANEOUS_YEARS,
+  applyPubmedEsearchDateParams,
+  getPubmedEsearchDateFields,
+} from "../pubmed-esearch-dates";
 
 const THROTTLE_MS = 200;
 
@@ -26,9 +31,10 @@ type PubMedHit = PubMedHitCore & { watchTargetId: ScanTarget["_id"] };
 async function searchPubMedAPI(
   term: string,
   apiKey: string | undefined,
-  options: { retmax?: number; mindate?: string; maxdate?: string } = {}
+  scanOptions: ScanOptions | undefined,
+  options: { retmax?: number } = {}
 ): Promise<PubMedHitCore[]> {
-  const { retmax = 20, mindate, maxdate } = options;
+  const { retmax = 20 } = options;
   const params = new URLSearchParams({
     db: "pubmed",
     term,
@@ -36,8 +42,7 @@ async function searchPubMedAPI(
     retmode: "json",
   });
   if (apiKey) params.set("api_key", apiKey);
-  if (mindate) params.set("mindate", mindate);
-  if (maxdate) params.set("maxdate", maxdate);
+  applyPubmedEsearchDateParams(params, scanOptions);
 
   const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${params.toString()}`;
   const searchRes = await fetchWithRetry(searchUrl);
@@ -108,16 +113,25 @@ export async function runPubMedAgent(
 
   const searchPubMed = tool({
     description:
-      "Search PubMed for articles by query term. Use E-utilities: esearch returns PMIDs, then esummary returns titles and dates. Use mindate/maxdate (YYYY/MM/DD) to focus on recent publications. Combine drug/target names with scope terms (e.g. clinical, human, therapy).",
-    parameters: z.object({
+      "Search PubMed for articles by query term. Publication-date filtering is applied by the server (not in this tool). Use E-utilities: esearch returns PMIDs, then esummary returns titles and dates. Combine drug/target names with scope terms (e.g. clinical, human, therapy).",
+    inputSchema: z.object({
       term: z.string().describe("PubMed search query (e.g. drug name OR gene AND clinical trial)"),
       retmax: z.number().min(1).max(100).default(20).describe("Max number of results to return"),
-      mindate: z.string().optional().describe("Start date YYYY/MM/DD for publication date filter"),
-      maxdate: z.string().optional().describe("End date YYYY/MM/DD for publication date filter"),
     }),
-    execute: async ({ term, retmax, mindate, maxdate }) => {
+    execute: async ({ term, retmax }) => {
+      const dateCfg =
+        context.scanOptions?.pubmedPubDate ?? {
+          mode: "contemporaneous" as const,
+          years: DEFAULT_CONTEMPORANEOUS_YEARS,
+        };
+      console.log("[searchPubMed]", {
+        term,
+        retmax,
+        pubmedPubDate: dateCfg,
+        esearchPdat: getPubmedEsearchDateFields(context.scanOptions),
+      });
       const watchTargetId = assignWatchTargetIdFromTerm(term, context.targets);
-      const hits = await searchPubMedAPI(term, apiKey, { retmax, mindate, maxdate });
+      const hits = await searchPubMedAPI(term, apiKey, context.scanOptions, { retmax });
       for (const h of hits) {
         const key = `${watchTargetId}:${h.pmid}`;
         if (seenTargetPmid.has(key)) continue;
@@ -140,15 +154,19 @@ export async function runPubMedAgent(
 Watch targets:
 ${targetSummary}
 
-PubMed E-utilities: Use the searchPubMed tool with a "term" parameter (PubMed query syntax). You can use AND, OR, NOT, and quoted phrases. Add scope terms like (human OR clinical OR drug) to avoid plant/agricultural results. Use mindate/maxdate to focus on recent papers. Call the tool multiple times with different queries (e.g. per target, or expanded terms) until you have good coverage.`;
+PubMed E-utilities: Use the searchPubMed tool with "term" (PubMed query syntax). You can use AND, OR, NOT, and quoted phrases. Add scope terms like (human OR clinical OR drug) to avoid plant/agricultural results. Do not encode calendar years or date ranges in the query to substitute for publication filters — the server applies publication-date rules separately. Call the tool multiple times with different queries (e.g. per target, or expanded terms) until you have good coverage.`;
+
+  const pubmedAgent = new ToolLoopAgent({
+    model: openai("gpt-4o-mini"),
+    instructions: systemPrompt,
+    tools: { searchPubMed },
+    stopWhen: stepCountIs(maxSteps),
+  });
 
   try {
-    await generateText({
-      model: openai("gpt-4o-mini"),
-      tools: { searchPubMed },
-      maxSteps,
-      system: systemPrompt,
-      prompt: "Run PubMed searches for the watch targets above. Use multiple queries if needed to cover each target and the mission.",
+    await pubmedAgent.generate({
+      prompt:
+        "Run PubMed searches for the watch targets above. Use multiple queries if needed to cover each target and the mission.",
     });
   } catch {
     // Return what we collected so far

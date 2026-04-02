@@ -3,7 +3,7 @@
  * Minimal stub: tools defined for structured generation; real API integration can be added later.
  */
 
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { SourceResult } from "../types";
@@ -23,7 +23,7 @@ export async function runOpenFdaAgent(
   const searchOpenFDA = tool({
     description:
       "Search openFDA for drug labels, adverse events, or other endpoints. query: search term (e.g. drug name). endpoint: one of 'drug/label', 'food/event' (adverse events), etc. limit: max results.",
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().describe("Search query (e.g. drug name, active ingredient)"),
       endpoint: z.string().optional().describe("API endpoint path (e.g. drug/label.json)"),
       limit: z.number().min(1).max(100).default(10).describe("Max results"),
@@ -48,7 +48,7 @@ openFDA provides drug labels, adverse events, and other data. Use the searchOpen
     await generateText({
       model: openai("gpt-4o-mini"),
       tools: { searchOpenFDA },
-      maxSteps,
+      stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,
       prompt: "Consider running openFDA searches for the watch targets. (API not yet wired; tool is a stub.)",
     });

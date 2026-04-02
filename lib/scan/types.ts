@@ -6,8 +6,21 @@ export type SourceName = SourceId;
 
 export type ScanMode = "latest" | "comprehensive";
 
+/** How PubMed `esearch` filters by publication date (`pdat`). Dates are applied server-side only. */
+export type PubmedPubDateMode = "contemporaneous" | "unbounded";
+
 export interface ScanOptions {
   mode: ScanMode;
+  /**
+   * PubMed publication-date window for `esearch` (`mindate` / `maxdate` + `datetype=pdat`).
+   * - **contemporaneous:** last N calendar years through today (UTC), NCBI `YYYY/MM/DD`.
+   * **unbounded:** no date params (search full PubMed for the query).
+   */
+  pubmedPubDate?: {
+    mode: PubmedPubDateMode;
+    /** Used when `mode` is `contemporaneous`; default 3. */
+    years?: number;
+  };
 }
 
 export type TherapeuticArea = "cardiovascular" | "oncology" | "other";
