@@ -75,6 +75,8 @@ When debugging **Convex `Server Error` or `[Request ID: …]`** messages, **insp
 
 **Symptom:** UI or API shows a generic Convex **Server Error** while logs say **`Could not find public function`** / **`Did you forget to run npx convex dev`**. **Cause:** the cloud deployment does not have your latest `convex/` code. **Fix:** run **`npx convex dev`** in a separate terminal (or **`npx convex deploy`**) until functions finish uploading; keep it running during local dev whenever you change Convex code. **`npm run dev` alone does not push Convex functions.**
 
+**Production deploy from CI:** Pushes to **`main`** run [`.github/workflows/convex-deploy.yml`](.github/workflows/convex-deploy.yml) (`npx convex deploy`). The repo needs the **`CONVEX_DEPLOY_KEY`** secret (`gh secret set CONVEX_DEPLOY_KEY`). See **README → Deploying Convex from GitHub Actions**.
+
 ## Conventions
 
 - TypeScript strict mode. No `any` except for Convex metadata fields.

@@ -69,6 +69,23 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
 
 3. **Environment variables in the cloud**: For any **cloud** deployment (dev or prod), set API keys in the [Convex dashboard](https://dashboard.convex.dev) → your deployment → **Settings → Environment Variables** (`GROQ_API_KEY`, `EXA_API_KEY`, etc.). Local deployments don’t use the dashboard’s env vars; cloud deployments do.
 
+## Deploying Convex from GitHub Actions
+
+On every push to **`main`**, the workflow [`.github/workflows/convex-deploy.yml`](.github/workflows/convex-deploy.yml) runs **`npx convex deploy`** to your **production** Convex deployment (same as a manual deploy from your machine).
+
+1. **Repository secret** `CONVEX_DEPLOY_KEY`: generate a **Production deploy key** in [Convex Dashboard](https://dashboard.convex.dev) → your project → **Deployment settings** (production) → **Deploy keys**.
+2. **Set the secret with the GitHub CLI** (from the repo root, with `gh` [installed](https://cli.github.com/) and authenticated):
+
+   ```bash
+   gh secret set CONVEX_DEPLOY_KEY
+   ```
+
+   Paste the deploy key when prompted, or pipe from a file: `gh secret set CONVEX_DEPLOY_KEY < keyfile.txt` (never commit the key file).
+
+You can re-run deploy manually from the **Actions** tab (**Deploy Convex (production)** → **Run workflow**).
+
+If your **Vercel** build command also runs `npx convex deploy`, the backend may deploy twice per change (usually harmless). To deploy Convex only from GitHub, change the Vercel build command to `npm run build` and keep `CONVEX_DEPLOY_KEY` only in GitHub Actions.
+
 ## Deploying to Vercel
 
 1. **Connect the repo**: In [Vercel](https://vercel.com), sign in, click **Add New… → Project**, and import your Compass GitHub repo. Vercel will detect Next.js.
