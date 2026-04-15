@@ -178,7 +178,7 @@ This document specifies implementation-level details: modules, Convex functions,
 - **digestRuns.getBySourceLinksHashInternal** (internal query) — dedupe digest insert by `sourceLinksHash` (used by `digestGenerate` action).
 - **digestItems.listByDigestRunInternal** (internal query) — all items for a digest run (email).
 - **scans.getScanRun** (internal query) — get scan run by id.
-- **crossTargetGraph.reconcileForWatchTargets** (internal mutation) — args `{ watchTargetIds }`; walks raw items for seed targets, groups by `source:externalId`, upserts **`graphCrossTargetEdges`** for pairs in the same **`scopeKey`** (`team:<id>` or `user:<id>`).
+- **crossTargetGraph.reconcileForWatchTargets** (internal mutation) — args `{ watchTargetIds, rawPageCursor? }`; one target per scheduled job (scan completion and refresh enqueue one job per id). Walks **`rawItems` in pages** (`paginate` on `by_watchTarget`) and caps sibling rows per link (`take` on `by_externalId`) to stay under Convex read limits; chains further pages via scheduler until done.
 - **scans.reconcileStaleScanRuns** (internal mutation) — stale pending/running scan cleanup (cron).
 - **watchTargets.getByIdsInternal** (internal query) — get watch targets by ids (no auth).
 - **users.getUserById** (internal query) — get user by id (no auth).
