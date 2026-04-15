@@ -1,0 +1,4 @@
+must_mention:
+  - NewCo
+expected_facts:
+  - acquisition

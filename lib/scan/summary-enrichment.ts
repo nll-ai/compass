@@ -5,8 +5,8 @@
  */
 
 import { generateObject } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../llm/groq";
 import type { RawItemInput } from "./types";
 
 const BATCH_SIZE = 8;
@@ -26,17 +26,17 @@ function snippetFor(item: RawItemInput): string {
 export async function enrichMissingSummaries(
   items: RawItemInput[],
   source: string,
-  openaiKey: string | undefined
+  groqApiKey: string | undefined
 ): Promise<RawItemInput[]> {
   const needEnrichment = items.filter(
     (i) => !(i.abstract ?? "").trim() && source !== "edgar"
   );
-  if (needEnrichment.length === 0 || !openaiKey) return items;
+  if (needEnrichment.length === 0 || !groqApiKey) return items;
 
   const summariesByEnrichmentIndex = new Map<number, string>();
   for (let start = 0; start < needEnrichment.length; start += BATCH_SIZE) {
     const batch = needEnrichment.slice(start, start + BATCH_SIZE);
-    const summaries = await summarizeBatch(batch, source, openaiKey);
+    const summaries = await summarizeBatch(batch, source, groqApiKey);
     summaries.forEach((s, i) => summariesByEnrichmentIndex.set(start + i, s));
   }
 
@@ -57,7 +57,7 @@ const SummariesSchema = z.object({
 async function summarizeBatch(
   batch: RawItemInput[],
   source: string,
-  openaiKey: string
+  groqApiKey: string
 ): Promise<string[]> {
   const lines = batch.map((item, i) => {
     const snip = snippetFor(item);
@@ -65,7 +65,7 @@ async function summarizeBatch(
   });
 
   const { object } = await generateObject({
-    model: openai("gpt-4o-mini"),
+    model: createGroqModel(groqModelFastId(), groqApiKey),
     schema: SummariesSchema,
     prompt: `You are writing one-sentence summaries for a competitive intelligence digest. For each item below (indexed [0], [1], ...), provide exactly one sentence that states the main point or what the user should know. Be factual and concise. For SEC filings use the title to infer (e.g. "Quarterly 10-Q report for Company X filed on date"). For news/publications describe the main claim or finding. Output the same number of summaries as input items, in order.
 

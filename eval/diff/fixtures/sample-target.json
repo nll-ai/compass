@@ -1,0 +1,8 @@
+{
+  "_id": "eval_sample_target",
+  "name": "semaglutide",
+  "displayName": "Semaglutide",
+  "aliases": ["Ozempic", "Wegovy"],
+  "type": "drug",
+  "therapeuticArea": "other"
+}

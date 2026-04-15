@@ -1,7 +1,13 @@
 import type { Id } from "../../convex/_generated/dataModel";
 import { generateObject } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelSmartId } from "../llm/groq";
+import type { DecisionDigestSections } from "../decisionDigest";
+import {
+  decisionDigestStrategicLensInstructions,
+  isDecisionDigestGenerationEnabled,
+  mergeDecisionDigestFromLlm,
+} from "../decisionDigest";
 import { formatSourceDate } from "../source-utils";
 
 export interface NewRawItem {
@@ -82,6 +88,8 @@ export interface DigestPayload {
   mediumCount: number;
   lowCount: number;
   items: DigestItemPayload[];
+  /** Present when Decision Digest generation ran successfully. */
+  decisionDigest?: DecisionDigestSections;
 }
 
 /** User feedback from past digest items, used to tune the prompt. */
@@ -113,9 +121,51 @@ export interface DigestTargetInfo {
 const CONTENT_MAX_CHARS = 1800;
 const SOURCES_CONTEXT_LIMIT = 50;
 
+/** Prior runs returned by Convex `listPriorDecisionContextFromServer` (same watch-target scope). */
+export type PriorDigestDecisionContext = {
+  generatedAt: number;
+  executiveSummary: string;
+  deltaSummary?: string;
+  materialitySummary?: string;
+  recommendedActionsSummary?: string;
+  strategicReadSummary?: string;
+  signalsCompact: Array<{ headline: string; synthesis: string }>;
+};
+
+function formatPriorDigestContextForPrompt(rows: PriorDigestDecisionContext[]): string {
+  if (rows.length === 0) {
+    return "No prior digests with the same watch-target scope are available — treat this as a baseline run (strategicReadSummary should still separate inventory vs interpretive read, but note limited history).";
+  }
+  return JSON.stringify(
+    rows.map((r, i) => ({
+      ordinalFromNewestPrior: i + 1,
+      generatedAt: new Date(r.generatedAt).toISOString().split("T")[0],
+      executiveSummary: r.executiveSummary,
+      priorDecisionBrief: {
+        deltaSummary: r.deltaSummary ?? null,
+        materialitySummary: r.materialitySummary ?? null,
+        recommendedActionsSummary: r.recommendedActionsSummary ?? null,
+        strategicReadSummary: r.strategicReadSummary ?? null,
+      },
+      priorSignalLines: r.signalsCompact,
+    })),
+    null,
+    2,
+  );
+}
+
 const DIGEST_SYSTEM_PROMPT = `You are a competitive intelligence analyst specializing in biopharmaceuticals.
 
 Your role is to synthesize raw intelligence data into actionable digests for a small biotech leadership team. Output will be read by time-constrained executives who need signal, not noise.
+
+When Decision Digest fields are requested in the schema, you must output deltaSummary, materialitySummary, recommendedActionsSummary, strategicReadSummary, and confidence. Ground every claim in the CURRENT source items and/or the PRIOR DIGEST CONTEXT block in the user message—no other external facts.
+
+Decision Digest roles:
+- deltaSummary: Factual inventory of what is NEW or DIFFERENT versus prior digests (prior signals + prior brief)—not generic restatement of this run only.
+- materialitySummary: Why the delta matters now for the team monitoring these targets (still source-grounded).
+- recommendedActionsSummary: Concrete next steps implied by sources.
+- strategicReadSummary: NON-inventory interpretive lane — how the picture, posture, or open questions shifted vs prior context; market and/or scientific implications as appropriate. Clearly prefix speculative lines with [Hypothesis].
+- confidence: Overall confidence given source quality and coverage.
 
 Formatting rules:
 - Headlines: Lead with the event, not the company. "Phase 2 trial of X enrolls first patient" not "Company announces milestone for X".
@@ -137,23 +187,52 @@ const digestAISchema = z.object({
   items: z.array(digestItemAISchema),
 });
 
+const decisionDigestAISchema = z.object({
+  deltaSummary: z
+    .string()
+    .max(1200)
+    .describe(
+      "2–4 sentences: what is new or changed in this digest vs a typical baseline (this scan’s new items only). Stick to facts from the sources list.",
+    ),
+  materialitySummary: z
+    .string()
+    .max(1200)
+    .describe("2–4 sentences: why these changes matter for a biotech team monitoring these targets now. No generic filler."),
+  recommendedActionsSummary: z
+    .string()
+    .max(800)
+    .describe(
+      "Bulleted or short numbered list (max 5 items): concrete next steps (e.g. verify trial record, read filing, align BD). Only if grounded in sources.",
+    ),
+  strategicReadSummary: z
+    .string()
+    .max(1500)
+    .describe(
+      "Interpretive strategic read vs PRIOR DIGEST CONTEXT: shift in posture, narrative tension, or what got sharper/muddier—not a list of new headlines (that belongs in deltaSummary). Use [Hypothesis] for clearly speculative implications (market or scientific). Ground in current + prior context only.",
+    ),
+  confidence: z.enum(["low", "medium", "high"]).describe("Overall confidence in the synthesis given source quality and coverage."),
+});
+
+const digestAISchemaWithDecision = digestAISchema.merge(decisionDigestAISchema);
+
 /**
  * Generate digest using an LLM: executive summary + per-signal items from sourcesContext.
  * Uses watch target notes ("What are you looking to monitor?") in the user prompt.
- * Falls back to rule-based generateDigest when openaiKey is missing or LLM fails.
+ * Falls back to rule-based generateDigest when groqApiKey is missing or LLM fails.
  */
 export async function generateDigestWithAI(
   newItems: NewRawItem[],
   period: "daily" | "weekly",
   targets: DigestTargetInfo[],
-  openaiKey: string | undefined,
-  _feedbackContext?: FeedbackContext
+  groqApiKey: string | undefined,
+  _feedbackContext?: FeedbackContext,
+  priorDigestContext?: PriorDigestDecisionContext[],
 ): Promise<DigestPayload> {
   const targetIdToIndex = new Map<Id<"watchTargets">, number>(targets.map((t, i) => [t._id, i]));
   const targetNames = new Map<Id<"watchTargets">, string>(targets.map((t) => [t._id, t.displayName]));
 
-  if (!openaiKey || newItems.length === 0) {
-    return generateDigest(newItems, period, targetNames, openaiKey, _feedbackContext);
+  if (!groqApiKey || newItems.length === 0) {
+    return generateDigest(newItems, period, targetNames, groqApiKey, _feedbackContext);
   }
 
   const limited = newItems.slice(0, SOURCES_CONTEXT_LIMIT);
@@ -180,16 +259,27 @@ export async function generateDigestWithAI(
     )
     .join("\n");
 
+  const useDecisionDigest = isDecisionDigestGenerationEnabled();
+  const schema = useDecisionDigest ? digestAISchemaWithDecision : digestAISchema;
+
+  const priorBlock =
+    useDecisionDigest ?
+      `Prior digest context (same watch-target scope; ordinal 1 = most recent before this run):
+${formatPriorDigestContextForPrompt(priorDigestContext ?? [])}
+${decisionDigestStrategicLensInstructions()}
+`
+    : "";
+
   try {
     const { object } = await generateObject({
-      model: openai("gpt-4o"),
-      schema: digestAISchema,
+      model: createGroqModel(groqModelSmartId(), groqApiKey),
+      schema,
       system: DIGEST_SYSTEM_PROMPT,
       prompt: `Today's date: ${new Date().toISOString().split("T")[0]}
 
 Active watch targets (with optional "What to monitor" when set):
 ${targetsBlock}
-
+${priorBlock}
 New items to synthesize (${limited.length} total). Each has index, source, target, title, url, content, publishedAt. Group related items into single digest entries when they cover the same event. Rank by significance. Be concise — no filler.
 
 ${JSON.stringify(sourcesContext, null, 2)}`,
@@ -226,7 +316,7 @@ ${JSON.stringify(sourcesContext, null, 2)}`,
     const mediumCount = items.filter((i) => i.significance === "medium").length;
     const lowCount = items.filter((i) => i.significance === "low").length;
 
-    return {
+    const base: DigestPayload = {
       executiveSummary: object.executiveSummary,
       criticalCount,
       highCount,
@@ -234,8 +324,20 @@ ${JSON.stringify(sourcesContext, null, 2)}`,
       lowCount,
       items,
     };
+    if (useDecisionDigest && "deltaSummary" in object && "confidence" in object) {
+      const o = object as z.infer<typeof digestAISchemaWithDecision>;
+      const merged = mergeDecisionDigestFromLlm({
+        deltaSummary: o.deltaSummary,
+        materialitySummary: o.materialitySummary,
+        recommendedActionsSummary: o.recommendedActionsSummary,
+        strategicReadSummary: o.strategicReadSummary,
+        confidence: o.confidence,
+      });
+      if (merged) base.decisionDigest = merged;
+    }
+    return base;
   } catch {
-    return generateDigest(newItems, period, targetNames, openaiKey, _feedbackContext);
+    return generateDigest(newItems, period, targetNames, groqApiKey, _feedbackContext);
   }
 }
 
@@ -243,7 +345,7 @@ export async function generateDigest(
   newItems: NewRawItem[],
   _period: "daily" | "weekly",
   _targetNames: Map<Id<"watchTargets">, string>,
-  _openaiKey: string | undefined,
+  _groqApiKey: string | undefined,
   _feedbackContext?: FeedbackContext
 ): Promise<DigestPayload> {
   // One signal per source: one digest item per raw item, using each item's title and abstract (main point).
@@ -286,4 +388,99 @@ export async function generateDigest(
     lowCount,
     items,
   };
+}
+
+const LLM_BACKFILL_ERROR_DETAIL_MAX = 700;
+
+function truncateForUserMessage(s: string, max = LLM_BACKFILL_ERROR_DETAIL_MAX): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+export type GenerateDecisionDigestSectionsForBackfillResult =
+  | { ok: true; sections: DecisionDigestSections }
+  | {
+      ok: false;
+      reason: "no_api_key" | "no_items" | "empty_sections" | "llm_error";
+      /** Groq / AI SDK message, truncated for safe display */
+      detail?: string;
+    };
+
+/**
+ * Generate only Decision Digest sections from raw sources (backfill for existing digest runs).
+ * Ignores `DECISION_DIGEST_ENABLED`; caller must supply `groqApiKey`.
+ */
+export async function generateDecisionDigestSectionsForBackfill(
+  newItems: NewRawItem[],
+  targets: DigestTargetInfo[],
+  groqApiKey: string,
+  opts?: { executiveSummary?: string; priorDigestContext?: PriorDigestDecisionContext[] },
+): Promise<GenerateDecisionDigestSectionsForBackfillResult> {
+  if (!groqApiKey.trim()) return { ok: false, reason: "no_api_key" };
+  if (newItems.length === 0) return { ok: false, reason: "no_items" };
+
+  const targetIdToIndex = new Map<Id<"watchTargets">, number>(targets.map((t, i) => [t._id, i]));
+  const limited = newItems.slice(0, SOURCES_CONTEXT_LIMIT);
+  const sourcesContext = limited.map((item, i) => {
+    const content = (item.abstract ?? item.fullText ?? item.title ?? "").trim() || item.title;
+    const truncated = content.length > CONTENT_MAX_CHARS ? content.slice(0, CONTENT_MAX_CHARS) + "…" : content;
+    const targetDisplay = targets[targetIdToIndex.get(item.watchTargetId) ?? 0]?.displayName ?? "Unknown";
+    return {
+      index: i,
+      source: item.source,
+      target: targetDisplay,
+      title: item.title,
+      url: item.url,
+      content: truncated,
+      publishedAt: item.publishedAt ? new Date(item.publishedAt).toISOString() : null,
+      metadata: item.metadata,
+    };
+  });
+
+  const targetsBlock = targets
+    .map(
+      (t) =>
+        `- ${t.displayName} (${t.type ?? "—"}, ${t.therapeuticArea ?? "—"}${t.indication ? `, ${t.indication}` : ""})${t.notes?.trim() ? `\n    What to monitor: ${t.notes.trim()}` : ""}`,
+    )
+    .join("\n");
+
+  const summaryHint =
+    opts?.executiveSummary?.trim() ?
+      `\n\nExisting executive summary for this digest (for alignment only; ground claims in sources below):\n${opts.executiveSummary.trim().slice(0, 2000)}`
+    : "";
+
+  const priorBlock = `Prior digest context (same watch-target scope; ordinal 1 = most recent before this digest):
+${formatPriorDigestContextForPrompt(opts?.priorDigestContext ?? [])}
+${decisionDigestStrategicLensInstructions()}
+`;
+
+  try {
+    const { object } = await generateObject({
+      model: createGroqModel(groqModelSmartId(), groqApiKey),
+      schema: decisionDigestAISchema,
+      system: DIGEST_SYSTEM_PROMPT,
+      prompt: `Today's date: ${new Date().toISOString().split("T")[0]}
+
+Active watch targets (with optional "What to monitor" when set):
+${targetsBlock}
+${summaryHint}
+${priorBlock}
+Source items (${limited.length}) from this digest run. Produce all Decision Digest fields (including strategicReadSummary) using ONLY these sources and the prior context block—no external facts.
+
+${JSON.stringify(sourcesContext, null, 2)}`,
+    });
+    const merged = mergeDecisionDigestFromLlm({
+      deltaSummary: object.deltaSummary,
+      materialitySummary: object.materialitySummary,
+      recommendedActionsSummary: object.recommendedActionsSummary,
+      strategicReadSummary: object.strategicReadSummary,
+      confidence: object.confidence,
+    });
+    if (!merged) return { ok: false, reason: "empty_sections" };
+    return { ok: true, sections: merged };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    return { ok: false, reason: "llm_error", detail: truncateForUserMessage(raw) };
+  }
 }

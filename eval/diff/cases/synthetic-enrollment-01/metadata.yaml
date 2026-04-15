@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: easy
+change_types:
+  - enrollment_change
+ground_truth_notes: Enrollment target 120→180.

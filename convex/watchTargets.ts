@@ -355,10 +355,12 @@ export const refreshLearnedTermsForTarget = internalAction({
             .join("\n")}`
         : "";
 
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey) {
-      return { updated: false, reason: "no_openai_key" };
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey) {
+      return { updated: false, reason: "no_groq_key" };
     }
+    // Default matches `GROQ_DEFAULT_MODEL_ID` in lib/llm/groq.ts (GPT-OSS 120B).
+    const groqModel = process.env.GROQ_MODEL_FAST?.trim() || "openai/gpt-oss-120b";
 
     const prompt = `You are a search query analyst for biopharma competitive intelligence. For watch target "${displayName}", we have user feedback on which retrieved items were relevant or not.
 
@@ -371,21 +373,21 @@ Return a JSON object only: { "addTerms": string[], "excludeTerms": string[] }
 - excludeTerms: 3-5 terms to EXCLUDE when they would pull in noise (e.g. "rice", "arabidopsis", "plant"). Use terms that appear in NOT RELEVANT content or that would filter it out.
 Keep phrases short and suitable for appending to PubMed/Exa-style queries.`;
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiKey}`,
+        Authorization: `Bearer ${groqKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: groqModel,
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
       }),
     });
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`OpenAI: ${res.status} ${err}`);
+      throw new Error(`Groq: ${res.status} ${err}`);
     }
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = data.choices?.[0]?.message?.content ?? "{}";

@@ -1,0 +1,5 @@
+source: pubmed
+difficulty: hard
+change_types:
+  - endpoint_change
+ground_truth_notes: Hierarchy shift OS→PFS with OS secondary.

@@ -11,9 +11,18 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "check-sec": "node scripts/check-sec-company-list.mjs",
-    "edgar-eval": "tsx scripts/run-edgar-eval.ts"
+    "edgar-eval": "tsx scripts/run-edgar-eval.ts",
+    "diff-eval": "tsx scripts/diff-eval.ts",
+    "seed-diff-eval-corpus": "tsx scripts/seed-diff-eval-corpus.ts",
+    "diff-eval-verify": "tsx scripts/diff-eval-verify.ts",
+    "backfill-decision-digest": "tsx scripts/backfill-decision-digest.ts",
+    "convex:logs": "convex logs",
+    "convex:logs:prod": "convex logs --prod",
+    "inspect-logs": "node scripts/inspect-logs.mjs",
+    "inspect-logs:convex": "node scripts/inspect-logs.mjs convex"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^3.0.35",
     "@ai-sdk/openai": "^3.0.49",
     "@workos-inc/authkit-nextjs": "^2.15.0",
     "ai": "^6.0.142",
@@ -37,6 +46,7 @@
     "markdownlint-cli2": "^0.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.8.2",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "yaml": "^2.8.3"
   }
 }

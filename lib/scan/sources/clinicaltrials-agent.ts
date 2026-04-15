@@ -4,8 +4,8 @@
  */
 
 import { generateText, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry } from "../fetchWithRetry";
@@ -34,7 +34,8 @@ export async function runClinicalTrialsAgent(
   options: { maxSteps?: number } = {}
 ): Promise<SourceResult> {
   const { maxSteps = 5 } = options;
-  if (!context.env.OPENAI_API_KEY || context.targets.length === 0) return { items: [] };
+  const groqKey = context.env.GROQ_API_KEY;
+  if (!groqKey || context.targets.length === 0) return { items: [] };
 
   const collectedItems: RawItemInput[] = [];
   const seenNctIds = new Set<string>();
@@ -110,7 +111,7 @@ Use the searchClinicalTrials tool with query terms from each watch target (drug 
 
   try {
     await generateText({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqKey),
       tools: { searchClinicalTrials },
       stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,

@@ -1,0 +1,8 @@
+must_mention:
+  - PFS
+  - progression-free
+must_not_mention:
+  - breast cancer-only indication
+expected_facts:
+  - progression-free survival
+  - "400"

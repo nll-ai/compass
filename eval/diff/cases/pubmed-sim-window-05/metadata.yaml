@@ -1,0 +1,10 @@
+source: clinicaltrials
+difficulty: hard
+change_types:
+  - protocol_amendment
+date_window:
+  before_start: 2020-01-01
+  before_end: 2020-12-31
+  after_start: 2021-01-01
+  after_end: 2021-12-31
+ground_truth_notes: Interim analysis added.

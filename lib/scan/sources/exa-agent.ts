@@ -4,8 +4,8 @@
  */
 
 import { generateText, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry } from "../fetchWithRetry";
@@ -38,7 +38,8 @@ export async function runExaAgent(
 ): Promise<SourceResult> {
   const { maxSteps = 5 } = options;
   const apiKey = context.env.EXA_API_KEY;
-  if (!apiKey || context.targets.length === 0) return { items: [] };
+  const groqKey = context.env.GROQ_API_KEY;
+  if (!apiKey || !groqKey || context.targets.length === 0) return { items: [] };
 
   const collectedItems: RawItemInput[] = [];
   const seenTargetUrl = new Set<string>();
@@ -117,7 +118,7 @@ Use the searchExa tool with queries that combine watch target names/aliases with
 
   try {
     await generateText({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqKey),
       tools: { searchExa },
       stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,

@@ -1,0 +1,3 @@
+# Rubric
+
+Interim analysis introduction.

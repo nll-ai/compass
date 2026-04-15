@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelSmartId } from "@/lib/llm/groq";
 import { resolveCompanyToSEC } from "@/lib/scan/sources/edgar-agent";
 
 const lookupSchema = z.object({
@@ -55,8 +55,13 @@ export async function POST(req: Request) {
       ? searchResults.map((r, i) => `[${i + 1}] ${r.title}\n${r.text || ""}\n${r.url}`).join("\n\n")
       : "No web results returned. Infer from the user query only.";
 
+    const groqKey = process.env.GROQ_API_KEY?.trim();
+    if (!groqKey) {
+      return NextResponse.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
+    }
+
     const { object } = await generateObject({
-      model: openai("gpt-4o"),
+      model: createGroqModel(groqModelSmartId(), groqKey),
       schema: lookupSchema,
       system: `You are a competitive intelligence analyst for biopharma. Given a user query describing something to track (a drug, target, company, researcher, or program), and optional web search results, extract structured fields for a watch target.
 

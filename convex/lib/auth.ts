@@ -22,6 +22,7 @@ export async function getUserIdFromIdentity(ctx: AnyCtx): Promise<Id<"users"> | 
   const identity = await getIdentity(ctx);
   if (!identity) return null;
   const workosId = identity.subject;
+  if (typeof workosId !== "string" || !workosId.trim()) return null;
   const user = await ctx.db
     .query("users")
     .withIndex("by_workosId", (q) => q.eq("workosId", workosId))

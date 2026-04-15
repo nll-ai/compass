@@ -20,6 +20,7 @@ import type * as feedbackForScan from "../feedbackForScan.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_crossTargetLinks from "../lib/crossTargetLinks.js";
 import type * as lib_digestHelpers from "../lib/digestHelpers.js";
+import type * as lib_digestWorkflowAssignee from "../lib/digestWorkflowAssignee.js";
 import type * as lib_formatters from "../lib/formatters.js";
 import type * as lib_slack_builder from "../lib/slack_builder.js";
 import type * as lib_sourceIds from "../lib/sourceIds.js";
@@ -63,6 +64,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/crossTargetLinks": typeof lib_crossTargetLinks;
   "lib/digestHelpers": typeof lib_digestHelpers;
+  "lib/digestWorkflowAssignee": typeof lib_digestWorkflowAssignee;
   "lib/formatters": typeof lib_formatters;
   "lib/slack_builder": typeof lib_slack_builder;
   "lib/sourceIds": typeof lib_sourceIds;

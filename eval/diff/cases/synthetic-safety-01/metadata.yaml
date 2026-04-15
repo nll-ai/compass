@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: medium
+change_types:
+  - safety_signal
+ground_truth_notes: AESI / hepatic monitoring.

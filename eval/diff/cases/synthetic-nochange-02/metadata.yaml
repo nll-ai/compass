@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: easy
+change_types:
+  - no_material_change
+ground_truth_notes: Whitespace-only delta.

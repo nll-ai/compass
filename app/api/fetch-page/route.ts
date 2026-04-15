@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { generateText } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
+import { createGroqModel, groqModelFastId } from "@/lib/llm/groq";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_BODY_BYTES = 1_000_000;
@@ -78,33 +80,23 @@ async function fetchPubMedArticle(url: string): Promise<string | null> {
   }
 }
 
-/** Use OpenAI to turn raw scraped/API text into clean, readable content. */
-async function formatWithOpenAI(rawText: string, openaiKey: string | undefined): Promise<string> {
-  if (!openaiKey || rawText.length < 50) return rawText.slice(0, FORMATTED_MAX_CHARS);
+/** Use Groq (AI SDK) to turn raw scraped/API text into clean, readable content. */
+async function formatWithGroq(rawText: string, groqKey: string | undefined): Promise<string> {
+  if (!groqKey || rawText.length < 50) return rawText.slice(0, FORMATTED_MAX_CHARS);
   const truncated = rawText.slice(0, 50_000);
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openaiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a formatter. Given raw scraped or API text from a web page (e.g. article, abstract, press release), produce a single clean, readable plain-text version. Preserve all substantive content: title, headings, paragraphs, lists, key facts. Remove navigation, ads, cookie notices, and boilerplate. Use clear line breaks. Output only the formatted text, no commentary.",
-        },
-        { role: "user", content: truncated },
-      ],
-      max_tokens: 16_384,
-    }),
-  });
-  if (!res.ok) return rawText.slice(0, FORMATTED_MAX_CHARS);
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const out = data.choices?.[0]?.message?.content?.trim();
-  return (out ?? rawText).slice(0, FORMATTED_MAX_CHARS);
+  try {
+    const { text } = await generateText({
+      model: createGroqModel(groqModelFastId(), groqKey),
+      maxOutputTokens: 16_384,
+      system:
+        "You are a formatter. Given raw scraped or API text from a web page (e.g. article, abstract, press release), produce a single clean, readable plain-text version. Preserve all substantive content: title, headings, paragraphs, lists, key facts. Remove navigation, ads, cookie notices, and boilerplate. Use clear line breaks. Output only the formatted text, no commentary.",
+      prompt: truncated,
+    });
+    const out = text?.trim();
+    return (out ?? rawText).slice(0, FORMATTED_MAX_CHARS);
+  } catch {
+    return rawText.slice(0, FORMATTED_MAX_CHARS);
+  }
 }
 
 export async function POST(request: Request) {
@@ -118,7 +110,7 @@ export async function POST(request: Request) {
     const normalizedUrl = normalizeUrl(url);
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
     const secret = process.env.SCAN_SECRET;
-    const openaiKey = process.env.OPENAI_API_KEY;
+    const groqKey = process.env.GROQ_API_KEY?.trim();
 
     // Return cached formatted content if present
     if (convexUrl) {
@@ -182,7 +174,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No text content extracted" }, { status: 422 });
     }
 
-    const formattedContent = await formatWithOpenAI(rawContent, openaiKey);
+    const formattedContent = await formatWithGroq(rawContent, groqKey);
 
     if (convexUrl && secret) {
       const client = new ConvexHttpClient(convexUrl);

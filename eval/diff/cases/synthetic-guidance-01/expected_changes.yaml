@@ -1,0 +1,5 @@
+must_mention:
+  - Type B
+  - Phase 3
+expected_facts:
+  - meeting

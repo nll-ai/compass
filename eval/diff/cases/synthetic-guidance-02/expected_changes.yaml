@@ -1,0 +1,4 @@
+must_mention:
+  - SPA
+expected_facts:
+  - protocol

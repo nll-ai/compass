@@ -4,8 +4,8 @@
  */
 
 import { generateObject, generateText, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
@@ -65,7 +65,7 @@ const deriveCompanySchema = z.object({
  */
 async function deriveCompanyFromTarget(
   target: ScanTarget,
-  openaiKey: string
+  groqApiKey: string
 ): Promise<string | null> {
   const name = target.name?.trim() ?? "";
   const displayName = target.displayName?.trim() ?? "";
@@ -75,7 +75,7 @@ async function deriveCompanyFromTarget(
   if (!displayName && !name) return null;
   try {
     const { object } = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqApiKey),
       schema: deriveCompanySchema,
       prompt: `You are identifying the public company that would file SEC 10-K/10-Q reports relevant to this watch target. Return the company name as it would appear in SEC EDGAR (e.g. "Regeneron", "Pfizer", "Johnson & Johnson"). Return only one company; for co-developed drugs pick the primary sponsor. If this is clearly a company-level target (ticker/name is the company), use that. If you cannot determine a listed company, return null.
 
@@ -116,9 +116,9 @@ async function summarizeFilingForTargets(
   form: string,
   fileDate: string,
   targetContexts: SummarizeTargetContext[],
-  openaiKey: string | undefined
+  groqApiKey: string | undefined
 ): Promise<string> {
-  if (!openaiKey || !filingExcerpt.trim() || targetContexts.length === 0) return "";
+  if (!groqApiKey || !filingExcerpt.trim() || targetContexts.length === 0) return "";
   const targetBlock = targetContexts
     .slice(0, 5)
     .map((t) => {
@@ -132,7 +132,7 @@ async function summarizeFilingForTargets(
     })
     .join("\n");
   const { text } = await generateText({
-    model: openai("gpt-4o-mini"),
+    model: createGroqModel(groqModelFastId(), groqApiKey),
     prompt: `You are an analyst summarizing SEC filings for competitive intelligence. Below is an excerpt from a ${form} filed ${fileDate}. This filing was found while monitoring the watch targets below—the search already determined relevance, so do not re-evaluate whether the filing is relevant.
 
 Watch targets being monitored:
@@ -412,9 +412,9 @@ export async function runEdgarAgent(
   context: SourceAgentContext,
   options: { maxSteps?: number; fullTextCount?: number } = {}
 ): Promise<SourceResult> {
-  const { items, error } = await runSECSearchAgent(
+    const { items, error } = await runSECSearchAgent(
     context.targets,
-    context.env.OPENAI_API_KEY,
+    context.env.GROQ_API_KEY,
     {
       ...options,
       mission: context.mission,
@@ -440,11 +440,11 @@ export interface EnrichEdgarItemsOptions {
 export async function enrichEdgarItemsWithSummaries(
   items: RawItemInput[],
   targets: ScanTarget[],
-  env: { OPENAI_API_KEY?: string },
+  env: { GROQ_API_KEY?: string },
   options: EnrichEdgarItemsOptions = {}
 ): Promise<RawItemInput[]> {
-  const openaiKey = env.OPENAI_API_KEY;
-  if (!openaiKey || items.length === 0) return items;
+  const groqApiKey = env.GROQ_API_KEY;
+  if (!groqApiKey || items.length === 0) return items;
   const maxItems = options.maxItems ?? 15;
   const delayMs = options.delayMs ?? SEC_FETCH_DELAY_MS;
   const toProcess = items.slice(0, maxItems);
@@ -478,7 +478,7 @@ export async function enrichEdgarItemsWithSummaries(
         form,
         fileDate,
         targetContexts,
-        openaiKey
+        groqApiKey
       );
       if (summary) {
         abstractByIndex.set(i, summary);
@@ -501,7 +501,7 @@ export async function enrichEdgarItemsWithSummaries(
  */
 export async function runSECSearchAgent(
   targets: ScanTarget[],
-  openaiKey: string | undefined,
+  groqApiKey: string | undefined,
   options: {
     maxSteps?: number;
     fullTextCount?: number;
@@ -511,7 +511,7 @@ export async function runSECSearchAgent(
   } = {}
 ): Promise<{ items: RawItemInput[]; error?: string }> {
   const { maxSteps = 5, fullTextCount = 15, mission, existingExternalIdsByWatchTarget } = options;
-  if (!openaiKey || targets.length === 0) return { items: [] };
+  if (!groqApiKey || targets.length === 0) return { items: [] };
 
   const collectedHits = new Map<string, SECAgentHit>();
   let lastSECError: string | undefined;
@@ -539,7 +539,7 @@ export async function runSECSearchAgent(
   for (const target of targets) {
     let companyCandidate = target.company?.trim() ?? "";
     if (!companyCandidate) {
-      const derived = await deriveCompanyFromTarget(target, openaiKey);
+      const derived = await deriveCompanyFromTarget(target, groqApiKey);
       companyCandidate = derived ?? "";
     }
     if (!companyCandidate) continue;
@@ -607,7 +607,7 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
 
   try {
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqApiKey),
       tools: { searchSECFullText, searchSECByCompany },
       stopWhen: stepCountIs(maxSteps),
       prompt,
@@ -659,7 +659,7 @@ Prefer 10-K for annual disclosures. Call the tools as needed (multiple full-text
             hit.form,
             hit.fileDate ?? "",
             targetContexts,
-            openaiKey
+            groqApiKey
           );
           if (summary && summary.length > 20 && !summary.toLowerCase().includes("no specific disclosure")) {
             adshToAbstract.set(hit.adsh, summary);

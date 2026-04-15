@@ -1,0 +1,11 @@
+source: pubmed
+difficulty: hard
+change_types:
+  - endpoint_change
+  - publication
+date_window:
+  before_start: 2022-01-01
+  before_end: 2022-12-31
+  after_start: 2023-01-01
+  after_end: 2023-12-31
+ground_truth_notes: Biomarker cohort upgrade.

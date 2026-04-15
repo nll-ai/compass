@@ -1,0 +1,4 @@
+must_mention:
+  - Japan
+expected_facts:
+  - multinational

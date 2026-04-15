@@ -1,0 +1,79 @@
+# Diff eval harness (Decision Digest)
+
+Offline evaluation for **before/after** text diff summaries without using the Compass UI or waiting for scheduled scans.
+
+## Case layout
+
+Each case lives under `eval/diff/cases/<caseId>/`:
+
+| File | Purpose |
+|------|---------|
+| `before.txt` | Prior snapshot text |
+| `after.txt` | Updated snapshot text |
+| `expected_changes.yaml` | `must_mention`, `must_not_mention`, optional `expected_facts` (fact recall); canonical |
+| `expected_changes.json` | Same shape; used if YAML is absent (backward compatibility) |
+| `expected_summary.md` | Gold notes / rubric passed to the **LLM judge** when scoring |
+| `metadata.yaml` | `source`, `difficulty`, `change_types`, `date_window`, `ground_truth_notes` (canonical) |
+| `metadata.json` | Same fields if YAML is absent |
+
+## Seeded corpus (plan Step 9)
+
+The repo includes **25** cases (`synthetic-smoke` + **24** from the seed script): mix of **no-material-change** (~20%), **endpoint / enrollment / safety / guidance / regulatory / sponsor** types, and **8 simulated PubMed-window** narratives (`pubmed-sim-window-*` with `date_window` in metadata) for replay-style diffs without live capture.
+
+```bash
+npm run seed-diff-eval-corpus        # idempotent: skips existing case dirs
+npm run seed-diff-eval-corpus -- --force   # overwrite
+```
+
+## Verification (plan Step 10)
+
+```bash
+npm run diff-eval-verify             # requires ≥15 cases with before/after
+npm run diff-eval-verify -- --with-llm     # also run → score --no-judge → report (needs GROQ_API_KEY)
+```
+
+## Scoring (plan Step 8)
+
+Deterministic **score** blends: substring (`must_mention` / `must_not`), **fact recall** on `expected_facts` vs combined output, and **fact precision** on `extractedFacts` grounded in before+after corpus (plus **unsupported claim count**).
+
+## CLI
+
+```bash
+# PubMed capture (MVP: --source pubmed only). Use --out file OR --out-dir (writes snapshot.txt).
+# Target: --target-json, --target-id (eval/diff/fixtures/<id>.json), or --query (clones sample-target.json with your displayName)
+npx tsx scripts/diff-eval.ts capture \
+  --source pubmed \
+  --target-id sample-target \
+  --start-date 2024-01-01 --end-date 2024-06-30 \
+  --out-dir /tmp/pubmed-window-a
+# Equivalent: --target-json eval/diff/fixtures/sample-target.json, --mindate / --maxdate, --out /tmp/a.txt
+
+# Normalize into a case folder (optional --metadata path copied to metadata.yaml or .json)
+npx tsx scripts/diff-eval.ts make-case --case-id my_case --before /tmp/a.txt --after /tmp/b.txt
+
+# Run LLM diff summary (needs GROQ_API_KEY)
+npx tsx scripts/diff-eval.ts run --case-id synthetic-smoke
+npx tsx scripts/diff-eval.ts run --all --limit 10
+
+# Score: deterministic checks + optional LLM judge (0–5 × 4 dimensions). Composite = 0.5×det + 0.5×judge mean.
+npx tsx scripts/diff-eval.ts score --run-dir eval/diff/runs/<timestamp>
+npx tsx scripts/diff-eval.ts score --run-dir eval/diff/runs/<timestamp> --no-judge
+npx tsx scripts/diff-eval.ts score --run-dir eval/diff/runs/<timestamp> --judge-model gpt-4o-mini
+
+# Markdown scorecard + per-case reports
+npx tsx scripts/diff-eval.ts report --run-dir eval/diff/runs/<timestamp>
+```
+
+Runs are written to `eval/diff/runs/<iso-timestamp>/` with:
+
+- `results.json`, `outputs/<case>.json`
+- After **score**: `scores.json` (deterministic, optional judge, composite)
+- After **report**: `scorecard.md`, `case_reports/<caseId>.md`
+
+## PubMed date windows
+
+`capture` uses `pubmedPubDate` **range** mode (`--start-date` / `--end-date` or `--mindate` / `--maxdate` as `YYYY-MM-DD`), wired through `ScanOptions` and NCBI `pdat` bounds.
+
+## Product integration
+
+Production **Decision Digest** sections on real digests are generated when `DECISION_DIGEST_ENABLED=true` on the Next.js server running `POST /api/scan` (see `.env.example`).

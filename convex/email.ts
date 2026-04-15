@@ -111,6 +111,33 @@ export const sendDigestEmail = internalAction({
         bodyHtml += `<p style="margin:0 0 16px;line-height:1.5;">${escapeHtml(digestRun.executiveSummary)}</p>`;
       }
 
+      const hasDecisionBrief =
+        (digestRun.deltaSummary?.trim() ?? "") !== "" ||
+        (digestRun.materialitySummary?.trim() ?? "") !== "" ||
+        (digestRun.recommendedActionsSummary?.trim() ?? "") !== "" ||
+        (digestRun.strategicReadSummary?.trim() ?? "") !== "" ||
+        digestRun.confidence != null;
+      if (showExecutiveSummary && hasDecisionBrief) {
+        bodyHtml += `<div style="margin:0 0 16px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;">`;
+        bodyHtml += `<p style="margin:0 0 8px;font-weight:600;font-size:14px;">Decision brief</p>`;
+        if (digestRun.confidence != null) {
+          bodyHtml += `<p style="margin:0 0 8px;font-size:12px;color:#4b5563;">Confidence: <strong>${escapeHtml(digestRun.confidence)}</strong></p>`;
+        }
+        if (digestRun.deltaSummary?.trim()) {
+          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;"><strong>What changed</strong><br/>${escapeHtml(digestRun.deltaSummary)}</p>`;
+        }
+        if (digestRun.materialitySummary?.trim()) {
+          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;"><strong>Why it matters</strong><br/>${escapeHtml(digestRun.materialitySummary)}</p>`;
+        }
+        if (digestRun.strategicReadSummary?.trim()) {
+          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;white-space:pre-wrap;"><strong>Strategic read</strong><br/>${escapeHtml(digestRun.strategicReadSummary)}</p>`;
+        }
+        if (digestRun.recommendedActionsSummary?.trim()) {
+          bodyHtml += `<p style="margin:0;font-size:13px;white-space:pre-wrap;"><strong>Suggested next steps</strong><br/>${escapeHtml(digestRun.recommendedActionsSummary)}</p>`;
+        }
+        bodyHtml += `</div>`;
+      }
+
       const sortedTargetIds = [...itemsByTarget.keys()].sort((a, b) => {
         const na = targetById.get(a)?.displayName ?? "";
         const nb = targetById.get(b)?.displayName ?? "";

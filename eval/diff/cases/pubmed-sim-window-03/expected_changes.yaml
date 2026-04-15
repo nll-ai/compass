@@ -1,0 +1,3 @@
+expected_facts:
+  - biomarker
+  - hazard ratio

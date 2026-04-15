@@ -27,7 +27,7 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
 ### Manual scan (local dev)
 
 1. In `.env.local` set **`SCAN_SECRET`** (any non-empty string) and your API keys:
-   - `OPENAI_API_KEY` – for digest generation (LLM summary).
+   - `GROQ_API_KEY` – for digest generation, scan agents, and other LLM features (`@ai-sdk/groq`). Default model is **GPT-OSS 120B** (`openai/gpt-oss-120b` on Groq); override with `GROQ_MODEL_FAST` / `GROQ_MODEL_SMART` if needed.
    - `EXA_API_KEY` – optional; adds web-search results from Exa (otherwise Exa returns 0 items).
    - `PUBMED_API_KEY` – optional; higher PubMed rate limit.
    - `PATENTSVIEW_API_KEY` – optional; [PatentsView](https://patentsview.org/) API key for US patent search (request via their help center).
@@ -67,7 +67,7 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
    - Run: `npx convex deploy`
    - This pushes your `convex/` code to the project’s **production** deployment. Use that deployment’s URL for your production app (e.g. set `NEXT_PUBLIC_CONVEX_URL` in your hosting env).
 
-3. **Environment variables in the cloud**: For any **cloud** deployment (dev or prod), set API keys in the [Convex dashboard](https://dashboard.convex.dev) → your deployment → **Settings → Environment Variables** (`OPENAI_API_KEY`, `EXA_API_KEY`, etc.). Local deployments don’t use the dashboard’s env vars; cloud deployments do.
+3. **Environment variables in the cloud**: For any **cloud** deployment (dev or prod), set API keys in the [Convex dashboard](https://dashboard.convex.dev) → your deployment → **Settings → Environment Variables** (`GROQ_API_KEY`, `EXA_API_KEY`, etc.). Local deployments don’t use the dashboard’s env vars; cloud deployments do.
 
 ## Deploying to Vercel
 
@@ -90,7 +90,7 @@ If Convex is working **locally** (backend at `http://127.0.0.1:3210` or similar)
    | `NEXT_PUBLIC_APP_URL` | Your Vercel URL, e.g. `https://compass-five-silk.vercel.app` |
    | WorkOS | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD`, `NEXT_PUBLIC_WORKOS_REDIRECT_URI` (use your production callback URL, e.g. `https://compass-five-silk.vercel.app/callback`) |
    | Auth allowlist | `AUTH_ALLOWED_DOMAINS`, `AUTH_ALLOWED_EMAILS` (same as local if desired) |
-   | Optional (for scan/digest) | `OPENAI_API_KEY`, `EXA_API_KEY`, `PUBMED_API_KEY`, etc. — only if you run scans from the deployed app; otherwise scans can be triggered by cron with secrets. |
+   | Optional (for scan/digest) | `GROQ_API_KEY`, `EXA_API_KEY`, `PUBMED_API_KEY`, etc. — only if you run scans from the deployed app; otherwise scans can be triggered by cron with secrets. |
 
    In WorkOS dashboard, add your Vercel domain to Redirect URIs (e.g. `https://compass-five-silk.vercel.app/callback`, sign-in/sign-out URLs).
 

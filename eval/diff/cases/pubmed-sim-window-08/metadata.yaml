@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: medium
+change_types:
+  - disclosure_update
+date_window:
+  before_start: 2017-01-01
+  before_end: 2017-12-31
+  after_start: 2018-01-01
+  after_end: 2018-12-31
+ground_truth_notes: Sponsorship / COI update.

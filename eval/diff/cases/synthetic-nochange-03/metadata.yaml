@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: medium
+change_types:
+  - no_material_change
+ground_truth_notes: Same facts, sentence reorder.

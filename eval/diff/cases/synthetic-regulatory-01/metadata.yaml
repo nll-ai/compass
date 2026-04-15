@@ -1,0 +1,5 @@
+source: openfda
+difficulty: hard
+change_types:
+  - label_change
+ground_truth_notes: Indication expansion.

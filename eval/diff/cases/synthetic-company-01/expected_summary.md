@@ -1,0 +1,3 @@
+# Rubric
+
+Sponsor change / acquisition.

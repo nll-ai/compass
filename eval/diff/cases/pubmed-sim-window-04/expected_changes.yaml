@@ -1,0 +1,4 @@
+must_mention:
+  - Phase 2
+expected_facts:
+  - RP2D

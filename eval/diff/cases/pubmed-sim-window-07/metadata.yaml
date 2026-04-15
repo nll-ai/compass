@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: easy
+change_types:
+  - geographic_expansion
+date_window:
+  before_start: 2018-06-01
+  before_end: 2018-12-31
+  after_start: 2019-01-01
+  after_end: 2019-06-30
+ground_truth_notes: Geography expansion.

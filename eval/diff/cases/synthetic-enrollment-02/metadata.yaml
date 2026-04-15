@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: medium
+change_types:
+  - enrollment_change
+ground_truth_notes: Activation and site count.

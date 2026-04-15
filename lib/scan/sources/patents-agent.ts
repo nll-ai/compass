@@ -4,8 +4,8 @@
  */
 
 import { generateText, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
@@ -44,7 +44,8 @@ export async function runPatentsAgent(
 ): Promise<SourceResult> {
   const { maxSteps = 5 } = options;
   const apiKey = context.env.PATENTSVIEW_API_KEY;
-  if (!apiKey || context.targets.length === 0) return { items: [] };
+  const groqKey = context.env.GROQ_API_KEY;
+  if (!apiKey || !groqKey || context.targets.length === 0) return { items: [] };
 
   const collectedItems: RawItemInput[] = [];
   const seenIds = new Set<string>();
@@ -121,7 +122,7 @@ Use the searchPatents tool with terms derived from each watch target (drug name,
 
   try {
     await generateText({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqKey),
       tools: { searchPatents },
       stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,

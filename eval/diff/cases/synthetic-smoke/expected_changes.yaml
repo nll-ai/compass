@@ -1,0 +1,8 @@
+must_mention:
+  - PFS
+  - "180"
+must_not_mention:
+  - fabricated trial
+expected_facts:
+  - progression-free survival
+  - "180"

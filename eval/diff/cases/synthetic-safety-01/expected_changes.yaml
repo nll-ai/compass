@@ -1,0 +1,5 @@
+must_mention:
+  - hepatic
+  - AESI
+expected_facts:
+  - LFT

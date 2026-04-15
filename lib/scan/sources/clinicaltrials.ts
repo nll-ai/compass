@@ -67,7 +67,7 @@ export async function runClinicalTrials(context: SourceAgentContext): Promise<So
   try {
     // Agent in charge: run agentic search first (LLM + tools).
     const agentResult =
-      context.env.OPENAI_API_KEY
+      context.env.GROQ_API_KEY
         ? await runClinicalTrialsAgent(context, { maxSteps: 5 })
         : { items: [] };
 

@@ -1,0 +1,5 @@
+expected_facts:
+  - DLT
+  - cohort
+must_not_mention:
+  - trial permanently closed

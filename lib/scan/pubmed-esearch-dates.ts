@@ -24,6 +24,14 @@ export function formatNcbiPdat(d: Date): string {
  * Future: optionally tighten `mindate` using the latest `publishedAt` already stored per target
  * (Convex `rawItems`) so the window tracks ingested coverage.
  */
+/** Normalize user input `YYYY-MM-DD` or `YYYY/MM/DD` to NCBI `YYYY/MM/DD`. */
+export function normalizeNcbiPdatString(s: string): string {
+  const t = s.trim().replace(/-/g, "/");
+  const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(t);
+  if (!m) return t;
+  return t;
+}
+
 export function getPubmedEsearchDateFields(
   scanOptions: ScanOptions | undefined
 ): { datetype?: "pdat"; mindate?: string; maxdate?: string } {
@@ -33,6 +41,18 @@ export function getPubmedEsearchDateFields(
   };
   if (cfg.mode === "unbounded") {
     return {};
+  }
+  if (cfg.mode === "range") {
+    const mindate = cfg.mindate?.trim() ? normalizeNcbiPdatString(cfg.mindate) : undefined;
+    const maxdate = cfg.maxdate?.trim() ? normalizeNcbiPdatString(cfg.maxdate) : undefined;
+    if (!mindate || !maxdate) {
+      return {};
+    }
+    return {
+      datetype: "pdat",
+      mindate,
+      maxdate,
+    };
   }
   const years = cfg.years ?? DEFAULT_CONTEMPORANEOUS_YEARS;
   const end = new Date();
@@ -60,9 +80,17 @@ export function normalizePubmedPubDateInput(raw: unknown): NonNullable<ScanOptio
   if (raw == null || typeof raw !== "object") {
     return { mode: "contemporaneous", years: DEFAULT_CONTEMPORANEOUS_YEARS };
   }
-  const o = raw as { mode?: unknown; years?: unknown };
+  const o = raw as { mode?: unknown; years?: unknown; mindate?: unknown; maxdate?: unknown };
   if (o.mode === "unbounded") {
     return { mode: "unbounded" };
+  }
+  if (o.mode === "range") {
+    const mindate = typeof o.mindate === "string" ? o.mindate.trim() : "";
+    const maxdate = typeof o.maxdate === "string" ? o.maxdate.trim() : "";
+    if (mindate && maxdate) {
+      return { mode: "range", mindate, maxdate };
+    }
+    return { mode: "contemporaneous", years: DEFAULT_CONTEMPORANEOUS_YEARS };
   }
   if (o.mode === "contemporaneous") {
     const years =

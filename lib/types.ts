@@ -41,6 +41,8 @@ export type DigestSourceRef = {
   date?: string;
 };
 
+export type DigestWorkflowStatus = "open" | "in_review" | "resolved";
+
 export type DigestItem = {
   _id: string;
   digestRunId: string;
@@ -55,7 +57,12 @@ export type DigestItem = {
   reviewedAt?: number;
   feedback?: "good" | "bad";
   feedbackAt?: number;
+  workflowStatus?: DigestWorkflowStatus;
+  assigneeUserId?: string;
+  workflowUpdatedAt?: number;
 };
+
+export type DecisionConfidence = "low" | "medium" | "high";
 
 export type DigestRun = {
   _id: string;
@@ -67,6 +74,11 @@ export type DigestRun = {
   highCount: number;
   mediumCount: number;
   lowCount: number;
+  deltaSummary?: string;
+  materialitySummary?: string;
+  recommendedActionsSummary?: string;
+  strategicReadSummary?: string;
+  confidence?: DecisionConfidence;
 };
 
 export type RawItem = {

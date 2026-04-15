@@ -7,7 +7,7 @@ export type SourceName = SourceId;
 export type ScanMode = "latest" | "comprehensive";
 
 /** How PubMed `esearch` filters by publication date (`pdat`). Dates are applied server-side only. */
-export type PubmedPubDateMode = "contemporaneous" | "unbounded";
+export type PubmedPubDateMode = "contemporaneous" | "unbounded" | "range";
 
 export interface ScanOptions {
   mode: ScanMode;
@@ -15,11 +15,15 @@ export interface ScanOptions {
    * PubMed publication-date window for `esearch` (`mindate` / `maxdate` + `datetype=pdat`).
    * - **contemporaneous:** last N calendar years through today (UTC), NCBI `YYYY/MM/DD`.
    * **unbounded:** no date params (search full PubMed for the query).
+   * **range:** explicit `mindate`/`maxdate` (NCBI `YYYY/MM/DD` or `YYYY-MM-DD`; normalized to slashes).
    */
   pubmedPubDate?: {
     mode: PubmedPubDateMode;
     /** Used when `mode` is `contemporaneous`; default 3. */
     years?: number;
+    /** Inclusive bounds when `mode` is `range`. */
+    mindate?: string;
+    maxdate?: string;
   };
 }
 

@@ -112,13 +112,40 @@ async function runPubmedProcedural(context: SourceAgentContext): Promise<SourceR
   return { items };
 }
 
+/**
+ * Procedural PubMed snapshot as plain text for offline eval / diff corpus (no Convex, no LLM).
+ */
+export async function capturePubMedSnapshotText(args: {
+  target: ScanTarget;
+  scanOptions: ScanOptions;
+  env: { PUBMED_API_KEY?: string };
+}): Promise<{ text: string; error?: string }> {
+  const ctx: SourceAgentContext = {
+    mission: "",
+    targets: [args.target],
+    env: args.env,
+    scanOptions: args.scanOptions,
+  };
+  const result = await runPubmedProcedural(ctx);
+  if (result.items.length === 0 && result.error) {
+    return { text: "", error: result.error };
+  }
+  const text = result.items
+    .map(
+      (i) =>
+        `PMID: ${i.externalId}\nTitle: ${i.title}\n${(i.abstract ?? "").trim()}\nURL: ${i.url}`,
+    )
+    .join("\n\n---\n\n");
+  return { text };
+}
+
 export async function runPubmed(context: SourceAgentContext): Promise<SourceResult> {
   const { targets, env } = context;
 
   try {
     // Agent in charge: run agentic search first (LLM + tools).
     const agentResult =
-      targets.length > 0 && env.OPENAI_API_KEY
+      targets.length > 0 && env.GROQ_API_KEY
         ? await runPubMedAgent(context, { maxSteps: 5 })
         : { items: [] };
 

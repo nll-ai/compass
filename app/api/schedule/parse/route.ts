@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { openai } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "@/lib/llm/groq";
 
 const ScheduleSchema = z.object({
   dailyEnabled: z.boolean().describe("True if user wants a daily scan"),
@@ -15,10 +15,12 @@ const ScheduleSchema = z.object({
     .describe("0=Sunday, 1=Monday, ... 6=Saturday"),
   weeklyHour: z.number().min(0).max(23),
   weeklyMinute: z.number().min(0).max(59),
+  // Groq requires every schema property in `required`; use false when N/A.
   weekdaysOnly: z
     .boolean()
-    .optional()
-    .describe("If true, daily run only on Mon-Fri"),
+    .describe(
+      "True when daily run should be Mon–Fri only; false for seven-day daily, weekly-only schedules, or when not specified"
+    ),
 });
 
 export type ParsedSchedule = z.infer<typeof ScheduleSchema>;
@@ -36,10 +38,15 @@ export async function POST(req: Request) {
     }
     const timezone = typeof body.timezone === "string" ? body.timezone : "UTC";
 
+    const groqKey = process.env.GROQ_API_KEY?.trim();
+    if (!groqKey) {
+      return NextResponse.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
+    }
+
     const { object } = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqKey),
       schema: ScheduleSchema,
-      prompt: `Parse the user's schedule description into structured fields. Use 24-hour time. Default to daily at 9:00 if they say "every day" or "daily". Default to weekly on Monday at 9:00 if they say "weekly" or "every week". Infer weekdaysOnly when they say "weekdays", "business days", "Mon-Fri", etc. Only set one of dailyEnabled or weeklyEnabled to true unless they explicitly ask for both.
+      prompt: `Parse the user's schedule description into structured fields. Use 24-hour time. Default to daily at 9:00 if they say "every day" or "daily". Default to weekly on Monday at 9:00 if they say "weekly" or "every week". Set weekdaysOnly to true when they say "weekdays", "business days", "Mon-Fri", etc.; otherwise false. Only set one of dailyEnabled or weeklyEnabled to true unless they explicitly ask for both.
 
 User description: "${description}"
 Interpret times in timezone: ${timezone}

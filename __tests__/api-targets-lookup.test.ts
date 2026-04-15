@@ -1,9 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
-
-vi.mock("@ai-sdk/openai", () => ({
-  openai: vi.fn(() => "mocked-model"),
-}));
 
 vi.mock("ai", () => ({
   generateObject: vi.fn(),
@@ -29,6 +25,11 @@ function mockGenerateObjectResult(object: Record<string, unknown>) {
 describe("POST /api/targets/lookup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("GROQ_API_KEY", "test-groq-key");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe("@spec R-PERSON-2.1: Lookup API identifies researchers", () => {

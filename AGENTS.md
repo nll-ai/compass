@@ -52,6 +52,29 @@ After completing any change (feature, bugfix, refactor), re-read `docs/styleguid
 
 Update HLD/LLD/EARS **during** implementation when the required edits are obvious; the subagent pass is the backstop for drift. Do not merge or ship changes that leave the design documents out of date.
 
+## Debugging and logs
+
+When debugging **Convex `Server Error` or `[Request ID: …]`** messages, **inspect deployment logs first** — do not guess from generic client errors.
+
+| Surface | Where |
+|--------|--------|
+| Next.js (`/api/*`, SSR) | Terminal running `npm run dev` |
+| Convex (queries, mutations, scheduler) | `npm run convex:logs` or dashboard **Logs** |
+
+**Commands:**
+
+- `npm run convex:logs` — stream logs (dev deployment from repo link).
+- `npm run convex:logs -- --history 100` — print the last ~100 lines (good right after reproducing).
+- `npm run convex:logs -- --history 200 --jsonl \| rg <RequestId>` — filter JSONL by request id or function name.
+- `npm run convex:logs:prod` — stream **production** (use with care).
+- `npm run inspect-logs` — print this cheat sheet; `npm run inspect-logs:convex -- --history 80` forwards to `convex logs` (same as `node scripts/inspect-logs.mjs convex --history 80`).
+
+**Dashboard:** [Convex dashboard](https://dashboard.convex.dev) → project → **Logs**.
+
+**Agents:** After reproducing a failure, run `npm run convex:logs -- --history 150` (or `--jsonl` + ripgrep) and read the stack / validation error before changing code.
+
+**Symptom:** UI or API shows a generic Convex **Server Error** while logs say **`Could not find public function`** / **`Did you forget to run npx convex dev`**. **Cause:** the cloud deployment does not have your latest `convex/` code. **Fix:** run **`npx convex dev`** in a separate terminal (or **`npx convex deploy`**) until functions finish uploading; keep it running during local dev whenever you change Convex code. **`npm run dev` alone does not push Convex functions.**
+
 ## Conventions
 
 - TypeScript strict mode. No `any` except for Convex metadata fields.

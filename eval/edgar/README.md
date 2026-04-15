@@ -12,7 +12,7 @@ This folder holds a **retrieval eval set** for the SEC EDGAR source: a fixed lis
 ## Prerequisites
 
 - **SEC EDGAR:** Set `SEC_EDGAR_USER_AGENT` in `.env.local` (required for SEC requests). No API key.
-- **Agent path (optional):** If `OPENAI_API_KEY` is set in `.env.local`, the script uses the EDGAR agent (LLM + full-text search); otherwise it uses the procedural company-list path only.
+- **Agent path (optional):** If `GROQ_API_KEY` is set in `.env.local`, the script uses the EDGAR agent (LLM + full-text search); otherwise it uses the procedural company-list path only.
 
 ## How to run
 

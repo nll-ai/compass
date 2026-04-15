@@ -1,0 +1,5 @@
+source: pubmed
+difficulty: medium
+change_types:
+  - no_material_change
+ground_truth_notes: Minor wording; same scientific claim.

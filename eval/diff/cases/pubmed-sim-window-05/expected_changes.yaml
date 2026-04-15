@@ -1,0 +1,4 @@
+must_mention:
+  - interim
+expected_facts:
+  - 50%

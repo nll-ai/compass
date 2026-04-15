@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: medium
+change_types:
+  - efficacy_update
+date_window:
+  before_start: 2023-01-01
+  before_end: 2023-06-30
+  after_start: 2023-07-01
+  after_end: 2023-12-31
+ground_truth_notes: PFS maturity.

@@ -4,8 +4,8 @@
  */
 
 import { generateText, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 
@@ -18,7 +18,8 @@ export async function runRssAgent(
   options: { maxSteps?: number } = {}
 ): Promise<SourceResult> {
   const { maxSteps = 3 } = options;
-  if (!context.env.OPENAI_API_KEY || context.targets.length === 0) return { items: [] };
+  const groqKey = context.env.GROQ_API_KEY;
+  if (!groqKey || context.targets.length === 0) return { items: [] };
 
   const fetchRssFeed = tool({
     description:
@@ -46,7 +47,7 @@ Use the fetchRssFeed tool to add feed URLs and optionally filter by keywords rel
 
   try {
     await generateText({
-      model: openai("gpt-4o-mini"),
+      model: createGroqModel(groqModelFastId(), groqKey),
       tools: { fetchRssFeed },
       stopWhen: stepCountIs(maxSteps),
       system: systemPrompt,

@@ -1,0 +1,1 @@
+Hazard ratio for OS (vs control) pre-specified as primary analysis.

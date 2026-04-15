@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: medium
+change_types:
+  - endpoint_change
+ground_truth_notes: Added secondary endpoints.

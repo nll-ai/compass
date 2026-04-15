@@ -1,0 +1,3 @@
+# Rubric
+
+Efficacy percentage update.

@@ -145,7 +145,7 @@ export async function runEdgar(context: SourceAgentContext): Promise<SourceResul
   try {
     // Agent in charge: run agentic search first (LLM + tools: full-text, company lookup).
     const agentResult =
-      targets.length > 0 && env.OPENAI_API_KEY
+      targets.length > 0 && env.GROQ_API_KEY
         ? await runEdgarAgent(context, {
             maxSteps: 5,
             fullTextCount: options?.mode === "comprehensive" ? 20 : 12,
@@ -162,15 +162,15 @@ export async function runEdgar(context: SourceAgentContext): Promise<SourceResul
     // Fallback: when agent returns nothing (and no error), use procedural company-list path.
     let proceduralItems = await runEdgarProcedural(context, options);
     // Enrich with content-based, target-tailored summaries so timeline/overlay show real summaries.
-    if (proceduralItems.length > 0 && env.OPENAI_API_KEY) {
+    if (proceduralItems.length > 0 && env.GROQ_API_KEY) {
       proceduralItems = await enrichEdgarItemsWithSummaries(
         proceduralItems,
         targets,
         env,
         { maxItems: 15 }
       );
-    } else if (proceduralItems.length > 0 && !env.OPENAI_API_KEY) {
-      console.warn("[edgar] OPENAI_API_KEY not set: SEC filings will have no abstracts");
+    } else if (proceduralItems.length > 0 && !env.GROQ_API_KEY) {
+      console.warn("[edgar] GROQ_API_KEY not set: SEC filings will have no abstracts");
     }
     return { items: proceduralItems };
   } catch (err) {

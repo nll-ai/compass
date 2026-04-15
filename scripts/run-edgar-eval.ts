@@ -2,7 +2,7 @@
  * Run SEC EDGAR retrieval for the eval target set and write outputs to eval/edgar/outputs/.
  *
  * Prerequisites:
- *   - .env.local with SEC_EDGAR_USER_AGENT (required). OPENAI_API_KEY optional (enables agent path).
+ *   - .env.local with SEC_EDGAR_USER_AGENT (required). GROQ_API_KEY optional (enables agent path).
  *
  * Usage:
  *   npx tsx scripts/run-edgar-eval.ts                    # run all targets in eval/edgar/targets.json
@@ -216,7 +216,7 @@ async function main(): Promise<void> {
   const targets: ScanTarget[] = specs.map(toScanTarget);
 
   const env: Record<string, string | undefined> = {
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
     SEC_EDGAR_USER_AGENT: process.env.SEC_EDGAR_USER_AGENT,
   };
 

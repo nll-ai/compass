@@ -1,0 +1,5 @@
+must_mention:
+  - first-line
+  - combination
+expected_facts:
+  - sNDA

@@ -4,8 +4,8 @@
  */
 
 import { ToolLoopAgent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult, ScanOptions } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry, sleep } from "../fetchWithRetry";
@@ -106,7 +106,8 @@ export async function runPubMedAgent(
 ): Promise<SourceResult> {
   const { maxSteps = 5 } = options;
   const apiKey = context.env.PUBMED_API_KEY;
-  if (!apiKey || context.targets.length === 0) return { items: [] };
+  const groqKey = context.env.GROQ_API_KEY;
+  if (!apiKey || !groqKey || context.targets.length === 0) return { items: [] };
 
   const collectedHits: PubMedHit[] = [];
   const seenTargetPmid = new Set<string>();
@@ -157,7 +158,7 @@ ${targetSummary}
 PubMed E-utilities: Use the searchPubMed tool with "term" (PubMed query syntax). You can use AND, OR, NOT, and quoted phrases. Add scope terms like (human OR clinical OR drug) to avoid plant/agricultural results. Do not encode calendar years or date ranges in the query to substitute for publication filters — the server applies publication-date rules separately. Call the tool multiple times with different queries (e.g. per target, or expanded terms) until you have good coverage.`;
 
   const pubmedAgent = new ToolLoopAgent({
-    model: openai("gpt-4o-mini"),
+    model: createGroqModel(groqModelFastId(), groqKey),
     instructions: systemPrompt,
     tools: { searchPubMed },
     stopWhen: stepCountIs(maxSteps),

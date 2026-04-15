@@ -18,6 +18,8 @@ const significanceValidator = v.union(
   v.literal("low"),
 );
 
+const decisionConfidenceValidator = v.union(v.literal("low"), v.literal("medium"), v.literal("high"));
+
 function checkDigestSecret(secret: string): boolean {
   return typeof process.env.SCAN_SECRET === "string" && process.env.SCAN_SECRET.length > 0 && secret === process.env.SCAN_SECRET;
 }
@@ -45,10 +47,24 @@ export const createDigestRunWithItemsFromServer = mutation({
       }),
     ),
     sourceLinksHash: v.optional(v.string()),
+    deltaSummary: v.optional(v.string()),
+    materialitySummary: v.optional(v.string()),
+    recommendedActionsSummary: v.optional(v.string()),
+    strategicReadSummary: v.optional(v.string()),
+    confidence: v.optional(decisionConfidenceValidator),
   },
   handler: async (ctx, args) => {
     if (!checkDigestSecret(args.secret)) throw new Error("Unauthorized");
-    const { secret: _s, sourceLinksHash, ...rest } = args;
+    const {
+      secret: _s,
+      sourceLinksHash,
+      deltaSummary,
+      materialitySummary,
+      recommendedActionsSummary,
+      strategicReadSummary,
+      confidence,
+      ...rest
+    } = args;
     const totalSignals = rest.items.length;
     const digestRunId = await ctx.db.insert("digestRuns", {
       scanRunId: rest.scanRunId,
@@ -62,6 +78,11 @@ export const createDigestRunWithItemsFromServer = mutation({
       lowCount: rest.lowCount,
       slackPosted: false,
       sourceLinksHash,
+      deltaSummary,
+      materialitySummary,
+      recommendedActionsSummary,
+      strategicReadSummary,
+      confidence,
     });
     for (const item of rest.items) {
       await ctx.db.insert("digestItems", {
@@ -78,6 +99,34 @@ export const createDigestRunWithItemsFromServer = mutation({
     }
     await ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId });
     return digestRunId;
+  },
+});
+
+/** Server-only: set Decision Digest fields on an existing run (backfill). Does not re-send email. */
+export const patchDecisionDigestFromServer = mutation({
+  args: {
+    secret: v.string(),
+    digestRunId: v.id("digestRuns"),
+    deltaSummary: v.optional(v.string()),
+    materialitySummary: v.optional(v.string()),
+    recommendedActionsSummary: v.optional(v.string()),
+    strategicReadSummary: v.optional(v.string()),
+    confidence: v.optional(decisionConfidenceValidator),
+  },
+  handler: async (ctx, args) => {
+    if (!checkDigestSecret(args.secret)) throw new Error("Unauthorized");
+    const run = await ctx.db.get(args.digestRunId);
+    if (!run) throw new Error("Digest run not found");
+    const patch: Record<string, unknown> = {};
+    if (args.deltaSummary !== undefined) patch.deltaSummary = args.deltaSummary;
+    if (args.materialitySummary !== undefined) patch.materialitySummary = args.materialitySummary;
+    if (args.recommendedActionsSummary !== undefined)
+      patch.recommendedActionsSummary = args.recommendedActionsSummary;
+    if (args.strategicReadSummary !== undefined) patch.strategicReadSummary = args.strategicReadSummary;
+    if (args.confidence !== undefined) patch.confidence = args.confidence;
+    if (Object.keys(patch).length === 0) return { ok: false as const, reason: "no_fields" as const };
+    await ctx.db.patch(args.digestRunId, patch);
+    return { ok: true as const };
   },
 });
 
@@ -103,6 +152,11 @@ export const createDigestRunWithItems = internalMutation({
       }),
     ),
     sourceLinksHash: v.optional(v.string()),
+    deltaSummary: v.optional(v.string()),
+    materialitySummary: v.optional(v.string()),
+    recommendedActionsSummary: v.optional(v.string()),
+    strategicReadSummary: v.optional(v.string()),
+    confidence: v.optional(decisionConfidenceValidator),
   },
   handler: async (ctx, args) => {
     const totalSignals = args.items.length;
@@ -118,6 +172,11 @@ export const createDigestRunWithItems = internalMutation({
       lowCount: args.lowCount,
       slackPosted: false,
       sourceLinksHash: args.sourceLinksHash,
+      deltaSummary: args.deltaSummary,
+      materialitySummary: args.materialitySummary,
+      recommendedActionsSummary: args.recommendedActionsSummary,
+      strategicReadSummary: args.strategicReadSummary,
+      confidence: args.confidence,
     });
     for (const item of args.items) {
       await ctx.db.insert("digestItems", {

@@ -1,0 +1,5 @@
+source: clinicaltrials
+difficulty: easy
+change_types:
+  - endpoint_change
+ground_truth_notes: Primary endpoint OS → PFS.

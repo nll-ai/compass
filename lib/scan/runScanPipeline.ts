@@ -7,7 +7,13 @@ import { runAllSources } from "./sources";
 import { filterRelevantItems } from "./relevance-filter";
 import { enrichMissingSummaries } from "./summary-enrichment";
 import { ALL_SOURCE_IDS } from "../sources/registry";
-import { generateDigest, generateDigestWithAI, type DigestTargetInfo } from "./digest";
+import {
+  generateDigest,
+  generateDigestWithAI,
+  type DigestTargetInfo,
+  type PriorDigestDecisionContext,
+} from "./digest";
+import { isDecisionDigestGenerationEnabled } from "../decisionDigest";
 import type { ScanOptions, ScanTarget } from "./types";
 import type { FeedbackForMission } from "./agent-context";
 import { normalizePubmedPubDateInput } from "./pubmed-esearch-dates";
@@ -24,9 +30,12 @@ export type ScanPostBody = {
    * Omitted → contemporaneous, last 3 years through today (UTC calendar dates, NCBI `YYYY/MM/DD`).
    */
   pubmedPubDate?: {
-    mode: "contemporaneous" | "unbounded";
+    mode: "contemporaneous" | "unbounded" | "range";
     /** Contemporaneous only; 1–50, default 3. */
     years?: number;
+    /** Range mode: inclusive NCBI-style dates (`YYYY/MM/DD` or `YYYY-MM-DD`). */
+    mindate?: string;
+    maxdate?: string;
   };
 };
 
@@ -117,7 +126,7 @@ export async function runScanPipeline({
     }));
 
     const env = {
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      GROQ_API_KEY: process.env.GROQ_API_KEY,
       EXA_API_KEY: process.env.EXA_API_KEY,
       PUBMED_API_KEY: process.env.PUBMED_API_KEY,
       PATENTSVIEW_API_KEY: process.env.PATENTSVIEW_API_KEY,
@@ -185,8 +194,8 @@ export async function runScanPipeline({
       const relevantItems =
         source === "edgar"
           ? result.items
-          : await filterRelevantItems(result.items, scanTargets, env.OPENAI_API_KEY);
-      const itemsToUpsert = await enrichMissingSummaries(relevantItems, source, env.OPENAI_API_KEY);
+          : await filterRelevantItems(result.items, scanTargets, env.GROQ_API_KEY);
+      const itemsToUpsert = await enrichMissingSummaries(relevantItems, source, env.GROQ_API_KEY);
       const { totalFound: t, newFound: n } = await client.mutation(api.rawItems.upsertRawItemsFromServer, {
         secret: effectiveSecret,
         scanRunId,
@@ -225,6 +234,14 @@ export async function runScanPipeline({
         scanRunId,
       });
       const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
+      let priorDigestContext: PriorDigestDecisionContext[] | undefined;
+      if (env.GROQ_API_KEY && isDecisionDigestGenerationEnabled()) {
+        priorDigestContext = await client.query(api.digestRuns.listPriorDecisionContextFromServer, {
+          secret: effectiveSecret,
+          scanRunId,
+          limit: 8,
+        });
+      }
       const digestTargets: DigestTargetInfo[] = scanTargets.map((t) => ({
         _id: t._id,
         displayName: t.displayName,
@@ -233,19 +250,20 @@ export async function runScanPipeline({
         indication: t.indication,
         notes: t.notes,
       }));
-      const payload = env.OPENAI_API_KEY
+      const payload = env.GROQ_API_KEY
         ? await generateDigestWithAI(
             newItems,
             (scan?.period as "daily" | "weekly") ?? "daily",
             digestTargets,
-            env.OPENAI_API_KEY,
-            feedbackContext
+            env.GROQ_API_KEY,
+            feedbackContext,
+            priorDigestContext,
           )
         : await generateDigest(
             newItems,
             (scan?.period as "daily" | "weekly") ?? "daily",
             new Map(scanTargets.map((t) => [t._id, t.displayName])),
-            env.OPENAI_API_KEY,
+            env.GROQ_API_KEY,
             feedbackContext
           );
       const rawItemIds = payload.items.flatMap((i) => i.rawItemIds);
@@ -261,6 +279,7 @@ export async function runScanPipeline({
             })
           : null;
       if (!existingReport) {
+        const d = payload.decisionDigest;
         await client.mutation(api.digests.createDigestRunWithItemsFromServer, {
           secret: effectiveSecret,
           scanRunId,
@@ -272,6 +291,17 @@ export async function runScanPipeline({
           lowCount: payload.lowCount,
           items: payload.items,
           sourceLinksHash,
+          ...(d
+            ? {
+                deltaSummary: d.deltaSummary,
+                materialitySummary: d.materialitySummary,
+                recommendedActionsSummary: d.recommendedActionsSummary,
+                ...(d.strategicReadSummary?.trim()
+                  ? { strategicReadSummary: d.strategicReadSummary.trim() }
+                  : {}),
+                confidence: d.confidence,
+              }
+            : {}),
         });
       }
     }

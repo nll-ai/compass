@@ -108,11 +108,11 @@ Agents share a **mission** string from `buildMission` in `lib/scan/agent-context
 
 ### Pattern used by PubMed, ClinicalTrials.gov, and SEC EDGAR
 
-These sources try an **LLM + tools** path first when `OPENAI_API_KEY` is set (and when the source’s own API key / prerequisites exist). If the agent returns **no items**, the runner falls back to **deterministic queries** built from watch-target fields (names, aliases, therapeutic scope, etc.).
+These sources try an **LLM + tools** path first when `GROQ_API_KEY` is set (and when the source’s own API key / prerequisites exist). If the agent returns **no items**, the runner falls back to **deterministic queries** built from watch-target fields (names, aliases, therapeutic scope, etc.).
 
 ```mermaid
 flowchart TD
-  R["Source runner (PubMed, CT.gov, EDGAR)"] --> Gate{"Agent enabled? (OPENAI_API_KEY + source prerequisites)"}
+  R["Source runner (PubMed, CT.gov, EDGAR)"] --> Gate{"Agent enabled? (GROQ_API_KEY + source prerequisites)"}
   Gate -->|no| P["Procedural path: fixed queries from target fields"]
   Gate -->|yes| A["LLM + tools: queries & expansion (PubMed publication dates: server-side pdat)"]
   A --> Any{"Any candidate items?"}
@@ -125,11 +125,11 @@ flowchart TD
 
 | Source | LLM shapes search queries? | Procedural fallback if agent returns nothing | Notable gates |
 |--------|----------------------------|-----------------------------------------------|---------------|
-| **PubMed** | Yes — AI SDK `ToolLoopAgent` with `searchPubMed` (`term` / `retmax`); **`esearch` `mindate`/`maxdate`** use NCBI **`YYYY/MM/DD`** + `datetype=pdat`, from `scanOptions.pubmedPubDate` (not the LLM) | Yes — `buildPubmedQuery` in `lib/scan/sources/pubmed.ts` | Agent path needs `PUBMED_API_KEY` and `OPENAI_API_KEY` |
-| **ClinicalTrials.gov** | Yes — agent + tools | Yes — single API query from name / displayName / alias | Agent needs `OPENAI_API_KEY` |
-| **SEC EDGAR** | Yes — full-text + company tools; optional LLM-derived company name | Yes — token / company-list matching in `lib/scan/sources/edgar.ts` | Procedural hits can still get LLM filing summaries when `OPENAI_API_KEY` is set |
-| **Exa** | Yes — `searchExa` tool | No | Needs `EXA_API_KEY` and `OPENAI_API_KEY` |
-| **Patents (PatentsView)** | Yes — agent + tools | No | Needs `PATENTSVIEW_API_KEY` and `OPENAI_API_KEY` |
+| **PubMed** | Yes — AI SDK `ToolLoopAgent` with `searchPubMed` (`term` / `retmax`); **`esearch` `mindate`/`maxdate`** use NCBI **`YYYY/MM/DD`** + `datetype=pdat`, from `scanOptions.pubmedPubDate` (not the LLM) | Yes — `buildPubmedQuery` in `lib/scan/sources/pubmed.ts` | Agent path needs `PUBMED_API_KEY` and `GROQ_API_KEY` |
+| **ClinicalTrials.gov** | Yes — agent + tools | Yes — single API query from name / displayName / alias | Agent needs `GROQ_API_KEY` |
+| **SEC EDGAR** | Yes — full-text + company tools; optional LLM-derived company name | Yes — token / company-list matching in `lib/scan/sources/edgar.ts` | Procedural hits can still get LLM filing summaries when `GROQ_API_KEY` is set |
+| **Exa** | Yes — `searchExa` tool | No | Needs `EXA_API_KEY` and `GROQ_API_KEY` |
+| **Patents (PatentsView)** | Yes — agent + tools | No | Needs `PATENTSVIEW_API_KEY` and `GROQ_API_KEY` |
 | **openFDA** | LLM loop exists; tool is a stub | No (always empty until API is wired) | See `lib/scan/sources/openfda-agent.ts` |
 | **RSS** | LLM loop exists; tool is a stub | No (always empty until feeds are wired) | See `lib/scan/sources/rss-agent.ts` |
 | **BioRxiv** | No | N/A | Stub runner only |
@@ -171,7 +171,7 @@ Per-source **query** behavior is summarized in §2. After candidates exist:
 
 ## 4) Non-LLM path and fallbacks
 
-- If `OPENAI_API_KEY` is unavailable, several steps degrade gracefully:
+- If `GROQ_API_KEY` is unavailable, several steps degrade gracefully:
   - PubMed / ClinicalTrials / EDGAR use **procedural** retrieval when the agent path does not run or returns no items (see §2).
   - Relevance filter returns **unfiltered** items.
   - Summary enrichment is **skipped**.

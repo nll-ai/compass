@@ -11,6 +11,11 @@ export default authkitMiddleware({
       "/api/convex-token",
       "/api/scan",
       "/api/scan/pubmed",
+      "/api/digest/backfill-decision",
+      // LLM smoke routes (Groq); same pattern as /api/scan — not gated by WorkOS session
+      "/api/schedule/parse",
+      "/api/targets/lookup",
+      "/api/fetch-page",
       "/_next/static/:path*",
       "/_next/image",
       "/favicon.ico",

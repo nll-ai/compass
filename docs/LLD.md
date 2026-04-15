@@ -16,7 +16,7 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/lib/crossTargetLinks.ts` | `linkKeyForRawItem`, `scopeKeyForWatchTarget`, `orderedTargetPair`, `mergeRawItemIds` (cap raw ids per edge). |
 | `app/targets/new/page.tsx` | Add watch target page; renders `NewTargetFormSection`. |
 | `app/targets/new/NewTargetFormSection.tsx` | Wraps `AddTargetForm` with `onAdded={(id) => router.push(\`/targets/${id}\`)}`. |
-| `app/digest/[id]/page.tsx` | Digest detail: list `digestItems`, `SignalOverlay` for **View** on a signal (`components/compass/SignalOverlay.tsx`). Overlay: portal to `document.body`, slide-out panel + dimmed backdrop; on close, exit animation must clear (`transitionend` on panel `transform`, 400ms fallback) so `body` scroll lock is removed; while exiting, `pointer-events: none` on shell/backdrop/panel so opacity-0 layers do not block the page. |
+| `app/digest/[id]/page.tsx` | Digest detail: optional **`DecisionBriefCard`** when run has Decision fields; list `digestItems` via **`DigestItemCard`** (workflow + comments + feedback + links); `SignalOverlay` for **View** on a signal (`components/compass/SignalOverlay.tsx`). Overlay: portal to `document.body`, slide-out panel + dimmed backdrop; on close, exit animation must clear (`transitionend` on panel `transform`, 400ms fallback) so `body` scroll lock is removed; while exiting, `pointer-events: none` on shell/backdrop/panel so opacity-0 layers do not block the page. Breadcrumb link to **Watch Targets** (`/targets`). |
 | `app/targets/[id]/page.tsx` | Target detail: run scan; **edit** / **delete** only when `viewerCanEdit` from `watchTargets.get`; **Automatic digest timing** card (link to Settings), insights links, source links, signal reports. |
 | `app/page.tsx` | Home: redirects to `/targets` if signed in, otherwise sign-in prompt. |
 | `app/dashboard/page.tsx` | Legacy redirect to `/targets`. |
@@ -33,12 +33,16 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
 | `convex/scanSchedule.ts` | `checkAndTrigger` only (cron: `userDigestSchedule` groups → `scheduleScan` + `digestNotifyUserIds`). |
 | `convex/crons.ts` | Intervals: `check-scan-schedule` (1 min) → `scanSchedule.checkAndTrigger`; `reconcile-stale-scans` (15 min) → `scans.reconcileStaleScanRuns`. |
-| `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; both schedule `internal.email.sendDigestEmail` after insert. |
-| `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, etc. |
-| `convex/users.ts` | `getUserById` (internal). |
+| `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; optional args `deltaSummary`, `materialitySummary`, `recommendedActionsSummary`, `confidence`; both schedule `internal.email.sendDigestEmail` after insert. |
+| `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, `remove` (deletes `digestItemComments` for each item, then items, then run), etc. |
+| `convex/digestGenerate.ts` | Internal rule-based digest when the scan API path does not create a run; **does not** populate Decision Digest fields (those come from Next.js `generateDigestWithAI` when `DECISION_DIGEST_ENABLED=true`). |
+| `convex/users.ts` | `getUserById` (internal), **`getMe`** (signed-in user `{ _id, email }` or null). |
 | `convex/email.ts` | `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
 | `convex/scans.ts` | `listRunning`, `listRecent`, `listScanHistory` (visible targets: **completed** / **failed** only; filter + sort by `completedAt` ?? `startedAt` ?? `scheduledFor`; capped read from `by_scheduledFor` then per-run `digestRuns` lookup via `by_scanRun`); `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
-| `convex/digestItems.ts` | `listByDigestRun` (`userOwnsDigestRun`), `listByWatchTarget` / `setFeedback` (`canViewWatchTarget`), `getFeedbackWithRawContent`, `listByDigestRunInternal` (email). |
+| `convex/digestItems.ts` | `listByDigestRun` (`userOwnsDigestRun`), `listByWatchTarget` / `setFeedback` (`canViewWatchTarget`), **`setWorkflowStatus`**, **`setAssignee`** (assignee must be target owner or same `teamId`), **`addComment`**, **`listComments`**, `getFeedbackWithRawContent`, `listByDigestRunInternal` (email). |
+| `lib/scan/digest.ts` | Digest LLM + rule-based generation; when `DECISION_DIGEST_ENABLED=true` on the Next.js server, AI path requests merged schema with Decision Digest sections (`lib/decisionDigest.ts`). |
+| `lib/telemetry/decisionDigest.ts` | `trackDigestDetailViewed` — no-op unless `NEXT_PUBLIC_DIGEST_TELEMETRY=1`. |
+| `eval/diff/` + `scripts/diff-eval.ts` | Offline diff corpus (YAML-first; `expected_facts` for recall, `extractedFacts` in model output for precision/unsupported-claim checks) + CLI; **score** supports `--no-judge` or LLM judge + composite `0.5×det + 0.5×judge`; **report** writes `scorecard.md` and `case_reports/<caseId>.md`. **`scripts/seed-diff-eval-corpus.ts`** seeds ≥15 cases; **`npm run diff-eval-verify`** checks corpus + optional `--with-llm` pipeline. See `eval/diff/README.md`. |
 | `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, **`canViewWatchTarget`** (same-team visibility), **`isWatchTargetOwner`** / **`watchTargetRowOwnerIs`** (row `userId` = owner for mutations), `userOwnsDigestRun`. No automatic team assignment on sign-in. |
 | `app/api/schedule/parse/route.ts` | POST body `{ description, timezone }` → parsed schedule fields (daily/weekly, hour, minute, weekdaysOnly, etc.). |
 
@@ -152,11 +156,11 @@ This document specifies implementation-level details: modules, Convex functions,
 ### 2.6 Digests and email
 
 - **digests.createDigestRunWithItemsFromServer** (mutation)  
-  Args: secret, scanRunId, period, executiveSummary, counts, items, sourceLinksHash?.  
+  Args: secret, scanRunId, period, executiveSummary, counts, items, sourceLinksHash?, optional **Decision Digest** fields: `deltaSummary?`, `materialitySummary?`, `recommendedActionsSummary?`, `confidence?` (`low` \| `medium` \| `high`).  
   Inserts digest run + items; then `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
 
 - **digests.createDigestRunWithItems** (internal mutation)  
-  Same shape (no secret). Same scheduler call after insert.
+  Same shape (no secret), including optional Decision Digest fields. Same scheduler call after insert.
 
 - **email.sendDigestEmail** (internal action)  
   Args: `{ digestRunId }`.  
@@ -198,7 +202,10 @@ This document specifies implementation-level details: modules, Convex functions,
 - **Request body:** `scanRunId?`, `period` ("daily" | "weekly"), `targetIds?`, `mode?` ("latest" | "comprehensive"), `sources?`, `pubmedPubDate?`.
   - `mode`: Defaults to "latest" if unspecified; UI-initiated scans always send "comprehensive" per R-SCAN-UI-2.
   - `sources`: Array of source IDs to run; `undefined` or empty runs all sources (see `ALL_SOURCE_IDS`).
-  - `pubmedPubDate` (optional, PubMed only): `{ mode: "contemporaneous" | "unbounded", years?: number }`. Omitted → **contemporaneous**, last **3** years through **today** (UTC), applied server-side to PubMed `esearch` as NCBI **`YYYY/MM/DD`** with `datetype=pdat`. **`unbounded`** omits date filters. The PubMed tool-loop agent does **not** supply dates (avoids LLM-invented ranges); see `lib/scan/pubmed-esearch-dates.ts`.
+  - `pubmedPubDate` (optional, PubMed only):  
+    - `{ mode: "contemporaneous" | "unbounded", years?: number }` — Omitted → **contemporaneous**, last **3** years through **today** (UTC), applied server-side to PubMed `esearch` as NCBI **`YYYY/MM/DD`** with `datetype=pdat`. **`unbounded`** omits date filters.  
+    - `{ mode: "range", mindate: string, maxdate: string }` — Inclusive publication-date window; each date is **`YYYY/MM/DD`** (normalized from `YYYY-MM-DD` if needed). Used for eval capture / replay and controlled diffs.  
+    The PubMed tool-loop agent does **not** supply dates (avoids LLM-invented ranges); see `lib/scan/pubmed-esearch-dates.ts`.
 - **Deduplication:** The endpoint fetches **`rawItems.getExistingExternalIdsByWatchTargetFromServer`** (per `watchTargetId`, per source) before running sources. **`upsertRawItemsFromServer`** inserts only when no row exists for the same **`source` + `externalId` + `watchTargetId`** (index `by_source_external_watchTarget`), so the same document can exist once per target and cross-target edges can be derived. `newFound` counts newly inserted rows.
 - Creates or uses existing scan run; runs source agents; on completion with new items, may create digest via `createDigestRunWithItemsFromServer` (which triggers email).
 - **Source-agent orchestration (AI SDK):** PubMed agent execution uses AI SDK **`ToolLoopAgent`** (`lib/scan/sources/pubmed-agent.ts`) with a typed `searchPubMed` tool and step stop condition; other source agents continue to use `generateText` + `tool` multi-step loops with equivalent stop conditions.
@@ -209,7 +216,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 - **Purpose:** Programmatic PubMed-only scan for a single existing watch target (same auth and scan pipeline as `POST /api/scan`, implemented via shared `lib/scan/runScanPipeline.ts`).
 - **Auth:** Same as `POST /api/scan` — `Authorization: Bearer <SCAN_SECRET>` or same-origin browser request; `SCAN_SECRET` must match Convex.
-- **Request body:** `{ watchTargetId: string, period?: "daily" | "weekly", mode?: "latest" | "comprehensive", pubmedPubDate?: { mode: "contemporaneous" | "unbounded", years?: number } }`.
+- **Request body:** `{ watchTargetId: string, period?: "daily" | "weekly", mode?: "latest" | "comprehensive", pubmedPubDate?: { mode: "contemporaneous" | "unbounded", years?: number } | { mode: "range", mindate: string, maxdate: string } }`.
   - Defaults: `period` → `"daily"`, `mode` → `"comprehensive"` (aligned with UI “Run scan”). `pubmedPubDate` omitted → same as `POST /api/scan` (contemporaneous, 3 years).
   - Internally runs with `sources: ["pubmed"]` and `targetIds: [watchTargetId]`.
 - **Response (200):** Same shape as `POST /api/scan` success: `{ ok: true, scanRunId, totalFound, newFound, failedSources? }`.
@@ -243,17 +250,23 @@ This document specifies implementation-level details: modules, Convex functions,
 - **userDigestSchedule:** timezone, daily/weekly fields, `weekdaysOnly?`, `rawDescription?`, last-run date keys, `userId`; index `by_userId`. Sole source of automatic scan timing.
 - **scanRuns:** includes optional `digestNotifyUserIds` for combined digest email recipients.
 
-### 5.3 rawItems and graphCrossTargetEdges
+### 5.3 digestRuns, digestItems, digestItemComments
+
+- **digestRuns:** `scanRunId`, `watchTargetId`, `period`, `executiveSummary`, `counts`, `sourceLinksHash?`, `createdAt`, optional **Decision Digest** fields: `deltaSummary?`, `materialitySummary?`, `recommendedActionsSummary?`, `confidence?` (`"low"` \| `"medium"` \| `"high"`). Index `by_scanRun`.
+- **digestItems:** per-signal row for a digest run; optional workflow: `workflowStatus?` (`"open"` \| `"in_review"` \| `"resolved"`), `assigneeUserId?`, `workflowUpdatedAt?`. Indexes include `by_digestRun`.
+- **digestItemComments:** `digestItemId`, `authorUserId`, `body`, `createdAt`; index **`by_digestItem`** on `["digestItemId", "createdAt"]`. Deleted when a digest run is removed (`digestRuns.remove`).
+
+### 5.4 rawItems and graphCrossTargetEdges
 
 - **rawItems:** Indexes include **`by_source_external_watchTarget`** on `["source", "externalId", "watchTargetId"]` for per-target dedup; **`by_externalId`** on `["source", "externalId"]` for cross-target sibling lookup. Internal helpers: **`getByExternalIdForTarget`**, **`listBySourceAndExternalId`**. Server upsert uses per-target existence checks.
 - **graphCrossTargetEdges:** `scopeKey`, `watchTargetIdA` / `watchTargetIdB` (ordered), `linkKind` (`shared_external_id`), `linkKey` (e.g. `pubmed:123`), `rawItemIds[]`, `lastSeenAt`. Indexes: **`by_scope_targets_key`**, **`by_watchTargetA`**, **`by_watchTargetB`**.
 
-### 5.4 formatSchedule (lib/formatSchedule.ts)
+### 5.5 formatSchedule (lib/formatSchedule.ts)
 
 - **Input:** Object with timezone, `daily*` and `weekly*` schedule booleans/numbers, weekdaysOnly?, rawDescription?.
 - **Output:** Human-readable string, e.g. `"Daily at 9:00. (America/New_York)"` or `"No automatic scans scheduled."`.
 
-### 5.5 AddTargetForm callback
+### 5.6 AddTargetForm callback
 
 - **Props:** `onAdded?: (targetId: Id<"watchTargets">) => void`.
 - **Invocation:** After successful `createTarget(...)`, component calls `onAdded?.(id)` with the returned id.
@@ -263,7 +276,7 @@ This document specifies implementation-level details: modules, Convex functions,
 ## 6. Environment and configuration
 
 - **Convex env (server-side):** `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `APP_URL` (digest links, team invite accept links, and **must be reachable by Convex** when `callScanApi` hits `POST /api/scan`), `SCAN_SECRET` (**must match** Next.js / Vercel), optional `MIGRATION_SECRET` for `teams.runTeamBootstrap`. Set via `npx convex env set` (use **`--prod`** for production deployment).
-- **Next.js env:** `SCAN_SECRET`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_APP_URL`, WorkOS keys, etc.; see `.env.example`.
+- **Next.js env:** `SCAN_SECRET`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_APP_URL`, **`GROQ_API_KEY`** (LLM via `@ai-sdk/groq`; default model **GPT-OSS 120B** / `openai/gpt-oss-120b`; optional `GROQ_MODEL_FAST` / `GROQ_MODEL_SMART`), WorkOS keys, etc.; see `.env.example`. Optional product flags: **`DECISION_DIGEST_ENABLED`**, **`NEXT_PUBLIC_DIGEST_TELEMETRY`**. **Convex cloud:** set **`GROQ_API_KEY`** (and optional model vars) for `watchTargets` learned-query refresh (`refreshLearnedTermsForTarget` internal action).
 - **Local vs remote Convex:** If `.env.local` has `CONVEX_DEPLOYMENT` starting with `local:`, the CLI/backend is local; otherwise cloud. Local Convex + local Next: `APP_URL` can be `http://localhost:3000`. Remote Convex cannot call `localhost`; use a deployed URL or tunnel.
 
 ---
@@ -274,7 +287,7 @@ This document specifies implementation-level details: modules, Convex functions,
 2. Mutation calls `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
 3. Action runs: load digest run, scan run, all digest items (`listByDigestRunInternal`), targets (`getByIdsInternal`).
 4. For each recipient (`digestNotifyUserIds` or first target owner): resolve `user.email`, filter items by subscription when `user.teamId` is set.
-5. If `RESEND_API_KEY` is set: POST to Resend with HTML (executive summary, per-target sections, links to `/targets/{id}/digests` and `/targets`).
+5. If `RESEND_API_KEY` is set: POST to Resend with HTML (executive summary, optional **Decision brief** block when run fields are set, per-target sections, links to `/targets/{id}/digests` and `/targets`).
 
 ---
 

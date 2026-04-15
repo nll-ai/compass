@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: medium
+change_types:
+  - companion_diagnostic
+date_window:
+  before_start: 2019-01-01
+  before_end: 2019-12-31
+  after_start: 2020-01-01
+  after_end: 2020-12-31
+ground_truth_notes: CDx linkage appears in later window.

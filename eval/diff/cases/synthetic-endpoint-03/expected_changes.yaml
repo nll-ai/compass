@@ -1,0 +1,5 @@
+must_mention:
+  - PFS
+expected_facts:
+  - hazard ratio
+  - secondary

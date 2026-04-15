@@ -182,6 +182,13 @@ export default defineSchema({
     generationTokens: v.optional(v.number()),
     /** Hash of the set of source link (raw item) IDs in this report; used to avoid duplicate reports. */
     sourceLinksHash: v.optional(v.string()),
+    /** Decision Digest: what changed vs prior context (optional; older runs omit). */
+    deltaSummary: v.optional(v.string()),
+    materialitySummary: v.optional(v.string()),
+    recommendedActionsSummary: v.optional(v.string()),
+    /** Interpretive lane: posture / market or scientific read vs prior digests; hypotheses labeled in text. */
+    strategicReadSummary: v.optional(v.string()),
+    confidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
   })
     .index("by_generatedAt", ["generatedAt"])
     .index("by_scanRun", ["scanRunId"])
@@ -219,11 +226,24 @@ export default defineSchema({
     reviewedAt: v.optional(v.number()),
     feedback: v.optional(v.union(v.literal("good"), v.literal("bad"))),
     feedbackAt: v.optional(v.number()),
+    workflowStatus: v.optional(
+      v.union(v.literal("open"), v.literal("in_review"), v.literal("resolved")),
+    ),
+    assigneeUserId: v.optional(v.id("users")),
+    workflowUpdatedAt: v.optional(v.number()),
   })
     .index("by_digestRun", ["digestRunId"])
     .index("by_watchTarget", ["watchTargetId"])
     .index("by_significance", ["significance"])
     .index("by_reviewed", ["reviewedAt"]),
+
+  /** Comments on a digest signal item; visible to users who can view the item’s watch target. */
+  digestItemComments: defineTable({
+    digestItemId: v.id("digestItems"),
+    authorUserId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_digestItem", ["digestItemId"]),
 
   slackConfig: defineTable({
     userId: v.optional(v.id("users")),

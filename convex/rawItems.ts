@@ -230,6 +230,16 @@ export const listByWatchTarget = query({
 });
 
 /** Get raw items by ids for showing original page content in the UI (e.g. overlay). */
+/** Server-only: load raw rows by id (e.g. decision-digest backfill). */
+export const getByIdsForServer = query({
+  args: { secret: v.string(), ids: v.array(v.id("rawItems")) },
+  handler: async (ctx, { secret, ids }) => {
+    if (!checkSecret(secret)) return [];
+    const rows = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return rows.filter((r): r is NonNullable<typeof r> => r != null);
+  },
+});
+
 export const getByIds = query({
   args: { ids: v.array(v.id("rawItems")) },
   handler: async (ctx, { ids }) => {

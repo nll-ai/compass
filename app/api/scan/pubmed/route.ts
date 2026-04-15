@@ -43,15 +43,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "pubmedPubDate must be an object" }, { status: 400 });
     }
     const pdMode = raw.pubmedPubDate.mode;
-    if (pdMode !== "contemporaneous" && pdMode !== "unbounded") {
+    if (pdMode !== "contemporaneous" && pdMode !== "unbounded" && pdMode !== "range") {
       return NextResponse.json(
-        { error: "pubmedPubDate.mode must be contemporaneous | unbounded" },
+        { error: "pubmedPubDate.mode must be contemporaneous | unbounded | range" },
         { status: 400 }
       );
     }
     const years = raw.pubmedPubDate.years;
     if (years !== undefined && (typeof years !== "number" || years < 1 || years > 50)) {
       return NextResponse.json({ error: "pubmedPubDate.years must be a number from 1 to 50" }, { status: 400 });
+    }
+    if (pdMode === "range") {
+      const mindate = raw.pubmedPubDate.mindate;
+      const maxdate = raw.pubmedPubDate.maxdate;
+      if (typeof mindate !== "string" || !mindate.trim() || typeof maxdate !== "string" || !maxdate.trim()) {
+        return NextResponse.json(
+          { error: "pubmedPubDate.range requires non-empty mindate and maxdate strings" },
+          { status: 400 }
+        );
+      }
     }
   }
 

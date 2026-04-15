@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: easy
+change_types:
+  - efficacy_update
+date_window:
+  before_start: 2024-01-01
+  before_end: 2024-06-30
+  after_start: 2024-07-01
+  after_end: 2024-12-31
+ground_truth_notes: Simulated adjacent-window replay (ORR change).

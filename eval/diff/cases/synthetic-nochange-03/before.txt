@@ -1,0 +1,1 @@
+Arm A receives drug X. Arm B receives placebo. Primary outcome: OS at 24 months.

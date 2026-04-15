@@ -1,0 +1,10 @@
+source: pubmed
+difficulty: medium
+change_types:
+  - trial_phase
+date_window:
+  before_start: 2021-06-01
+  before_end: 2021-12-31
+  after_start: 2022-01-01
+  after_end: 2022-06-30
+ground_truth_notes: Phase escalation.

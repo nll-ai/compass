@@ -357,6 +357,13 @@ align-items: center
 - `.container` max-width is `1080px` — optimized for readability.
 - Timeline padding-left (`2.25rem`) accommodates the track line and month markers.
 
+### Digest detail page (`/digest/[id]`)
+
+- **Layout:** Top breadcrumb (muted, link to **Watch Targets** — not a separate “history” hub). `<h1>` = period + date. **Executive summary** uses existing banner/card patterns.
+- **Decision brief:** Optional `.card.stack` section (`aria-label="Decision brief"`) shown only when at least one Decision Digest field exists on the run. Subheadings: *What changed*, *Why it matters*, *Suggested next steps*. **Confidence** is a compact badge (reuse semantic tokens: success/neutral/error-adjacent backgrounds from §2 — do not introduce new palette colors).
+- **Signals list:** Each item remains `.card.stack` (`DigestItemCard`). **Workflow** row: bordered top separator (`var(--border)`), `Status` + `Assignee` selects (`.card` inputs, compact), **Comments** disclosure with threaded list + single-line add field. Use `.button-secondary-compact` for the comments toggle where appropriate. Preserve **Links to original sources** and thumbs feedback below workflow.
+- **Accessibility:** Workflow controls need explicit `aria-label` or associated `<label>` elements; comments region `aria-expanded` / `aria-controls`.
+
 ### Settings page (sidebar tabs)
 
 - **Layout:** `.settings-layout` — flex row with `gap: 1.5rem`: `.settings-sidebar` (`flex: 0 0 11rem`, `min-width: 10rem`) wraps the tab rail; `.settings-panels` (`flex: 1`, `min-width: 0`) holds both tab panels.
