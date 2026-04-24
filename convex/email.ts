@@ -13,6 +13,26 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function formatCategory(category: string): string {
+  return category
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function confidenceLabel(confidence: string): string {
+  switch (confidence) {
+    case "high":
+      return "High confidence";
+    case "medium":
+      return "Medium confidence";
+    case "low":
+      return "Low confidence";
+    default:
+      return confidence;
+  }
+}
+
 /** Safe attribute value for `href` (validates http/https, escapes for HTML). */
 function hrefAttrFromBase(base: string, path: string): string {
   const b = base.replace(/\/$/, "") || "http://localhost";
@@ -24,6 +44,183 @@ function hrefAttrFromBase(base: string, path: string): string {
   } catch {
     return escapeHtml("#");
   }
+}
+
+/** Safe absolute URL for source links (validates http/https, escapes for HTML). */
+function hrefAttrFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return escapeHtml("#");
+    return escapeHtml(parsed.href);
+  } catch {
+    return escapeHtml("#");
+  }
+}
+
+export type DigestEmailRenderableItem = {
+  watchTargetId: string;
+  significance: string;
+  category: string;
+  headline: string;
+  synthesis?: string;
+  sources?: Array<{
+    url: string;
+    title?: string;
+    source?: string;
+    date?: string;
+  }>;
+};
+
+export function buildDigestEmailHtml(args: {
+  appUrl: string;
+  period: string;
+  dateStr: string;
+  executiveSummary: string;
+  showExecutiveSummary: boolean;
+  deltaSummary?: string;
+  materialitySummary?: string;
+  strategicReadSummary?: string;
+  recommendedActionsSummary?: string;
+  confidence?: string;
+  items: DigestEmailRenderableItem[];
+  targetDisplayNameById: Map<string, string>;
+}): string {
+  const {
+    appUrl,
+    period,
+    dateStr,
+    executiveSummary,
+    showExecutiveSummary,
+    deltaSummary,
+    materialitySummary,
+    strategicReadSummary,
+    recommendedActionsSummary,
+    confidence,
+    items,
+    targetDisplayNameById,
+  } = args;
+  const hubHref = hrefAttrFromBase(appUrl, "/targets");
+  const itemsByTarget = new Map<string, DigestEmailRenderableItem[]>();
+  for (const item of items) {
+    const list = itemsByTarget.get(item.watchTargetId) ?? [];
+    list.push(item);
+    itemsByTarget.set(item.watchTargetId, list);
+  }
+  const sortedTargetIds = [...itemsByTarget.keys()].sort((a, b) => {
+    const na = targetDisplayNameById.get(a) ?? "";
+    const nb = targetDisplayNameById.get(b) ?? "";
+    return na.localeCompare(nb);
+  });
+
+  let bodyHtml = `<div style="margin:0;padding:16px;background:#f9fafb;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5;">`;
+  bodyHtml += `<div style="max-width:760px;margin:0 auto;">`;
+  bodyHtml += `<h1 style="font-size:22px;line-height:1.3;margin:0 0 16px;font-weight:700;">Compass ${escapeHtml(period)} digest — ${escapeHtml(dateStr)}</h1>`;
+  if (showExecutiveSummary) {
+    bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
+    bodyHtml += `<p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">${escapeHtml(executiveSummary)}</p>`;
+    bodyHtml += `</section>`;
+  }
+
+  const hasDecisionBrief =
+    (deltaSummary?.trim() ?? "") !== "" ||
+    (materialitySummary?.trim() ?? "") !== "" ||
+    (recommendedActionsSummary?.trim() ?? "") !== "" ||
+    (strategicReadSummary?.trim() ?? "") !== "" ||
+    confidence != null;
+  if (showExecutiveSummary && hasDecisionBrief) {
+    bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
+    bodyHtml += `<h2 style="margin:0 0 10px;font-weight:600;font-size:16px;line-height:1.4;">Decision brief</h2>`;
+    if (confidence != null) {
+      const confidenceBg =
+        confidence === "high"
+          ? "#d1fae5"
+          : confidence === "medium"
+            ? "#f3f4f6"
+            : "#fee2e2";
+      const confidenceColor =
+        confidence === "high"
+          ? "#059669"
+          : confidence === "medium"
+            ? "#374151"
+            : "#b91c1c";
+      bodyHtml += `<p style="margin:0 0 10px;">`;
+      bodyHtml += `<span style="display:inline-block;padding:4px 8px;border-radius:6px;background:${confidenceBg};color:${confidenceColor};font-size:12px;font-weight:600;">${escapeHtml(confidenceLabel(confidence))}</span>`;
+      bodyHtml += `</p>`;
+    }
+    if (deltaSummary?.trim()) {
+      bodyHtml += `<h3 style="margin:0 0 4px;font-size:14px;line-height:1.4;">What changed</h3>`;
+      bodyHtml += `<p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#374151;">${escapeHtml(deltaSummary)}</p>`;
+    }
+    if (materialitySummary?.trim()) {
+      bodyHtml += `<h3 style="margin:0 0 4px;font-size:14px;line-height:1.4;">Why it matters</h3>`;
+      bodyHtml += `<p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#374151;">${escapeHtml(materialitySummary)}</p>`;
+    }
+    if (strategicReadSummary?.trim()) {
+      bodyHtml += `<h3 style="margin:0 0 4px;font-size:14px;line-height:1.4;">Strategic read</h3>`;
+      bodyHtml += `<p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#374151;white-space:pre-wrap;">${escapeHtml(strategicReadSummary)}</p>`;
+    }
+    if (recommendedActionsSummary?.trim()) {
+      bodyHtml += `<h3 style="margin:0 0 4px;font-size:14px;line-height:1.4;">Suggested next steps</h3>`;
+      bodyHtml += `<p style="margin:0;font-size:14px;line-height:1.6;color:#374151;white-space:pre-wrap;">${escapeHtml(recommendedActionsSummary)}</p>`;
+    }
+    bodyHtml += `</section>`;
+  }
+
+  bodyHtml += `<section style="margin:0 0 16px;">`;
+  bodyHtml += `<h2 style="margin:0;font-size:18px;line-height:1.4;">Signals (${items.length})</h2>`;
+  bodyHtml += `</section>`;
+
+  for (const tid of sortedTargetIds) {
+    const name = targetDisplayNameById.get(tid) ?? "Watch target";
+    const digestHref = hrefAttrFromBase(appUrl, `/targets/${tid}/digests`);
+    bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
+    bodyHtml += `<h2 style="font-size:18px;line-height:1.4;margin:0 0 8px;">${escapeHtml(name)}</h2>`;
+    bodyHtml += `<p style="margin:0 0 12px;font-size:14px;"><a href="${digestHref}" style="color:#2563eb;text-decoration:none;">View full digest for ${escapeHtml(name)}</a></p>`;
+    const targetItems = itemsByTarget.get(tid) ?? [];
+    bodyHtml += "<ul style=\"margin:0;list-style:none;padding:0;\">";
+    for (const it of targetItems) {
+      bodyHtml += `<li style="margin:0 0 10px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff;">`;
+      bodyHtml += `<div style="margin:0 0 8px;">`;
+      bodyHtml += `<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 8px;border:1px solid #d1d5db;border-radius:999px;font-size:12px;font-weight:600;color:#374151;">${escapeHtml(it.significance.toUpperCase())}</span>`;
+      bodyHtml += `<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 8px;border:1px solid #d1d5db;border-radius:999px;font-size:12px;color:#374151;">${escapeHtml(formatCategory(it.category))}</span>`;
+      bodyHtml += `</div>`;
+      bodyHtml += `<h3 style="margin:0 0 8px;font-size:16px;line-height:1.45;font-weight:600;">${escapeHtml(it.headline)}</h3>`;
+      const synthesis = (it.synthesis ?? "").trim();
+      bodyHtml += `<p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#4b5563;">${escapeHtml(synthesis || "No additional summary available.")}</p>`;
+      if (Array.isArray(it.sources) && it.sources.length > 0) {
+        bodyHtml += `<p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6b7280;">Links to original sources</p>`;
+        bodyHtml += `<ul style="margin:0;list-style:none;padding:0;">`;
+        for (const src of it.sources) {
+          const sourceHref = hrefAttrFromUrl(src.url);
+          const sourceTitle = (src.title ?? "").trim() || "View";
+          const sourceLabel = (src.source ?? "").trim().toUpperCase();
+          bodyHtml += `<li style="margin:0 0 4px;font-size:13px;line-height:1.5;">`;
+          if (sourceLabel) {
+            bodyHtml += `<span style="display:inline-block;margin-right:6px;padding:2px 7px;border:1px solid #d1d5db;border-radius:999px;font-size:11px;color:#374151;">${escapeHtml(sourceLabel)}</span>`;
+          }
+          bodyHtml += `<a href="${sourceHref}" style="color:#2563eb;text-decoration:none;">${escapeHtml(sourceTitle)} ↗</a>`;
+          if (src.date != null && src.date !== "") {
+            bodyHtml += ` <span style="font-size:12px;color:#9ca3af;">${escapeHtml(src.date)}</span>`;
+          }
+          bodyHtml += `</li>`;
+        }
+        bodyHtml += `</ul>`;
+      }
+      bodyHtml += "</li>";
+    }
+    bodyHtml += "</ul>";
+    bodyHtml += `</section>`;
+  }
+
+  if (sortedTargetIds.length === 0) {
+    bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
+    bodyHtml += `<p style="margin:0;color:#6b7280;font-size:14px;">No per-target signals in this digest for you. <a href="${hubHref}" style="color:#2563eb;text-decoration:none;">Open Watch Targets</a></p>`;
+    bodyHtml += `</section>`;
+  }
+  bodyHtml += `<p style="margin:20px 0 0;font-size:14px;"><a href="${hubHref}" style="color:#2563eb;text-decoration:none;">Open Compass — Watch Targets</a></p>`;
+  bodyHtml += `</div>`;
+  bodyHtml += `</div>`;
+  return bodyHtml;
 }
 
 export const sendDigestEmail = internalAction({
@@ -95,81 +292,25 @@ export const sendDigestEmail = internalAction({
         subIds === null ? targetIdsInRun : new Set(subIds);
 
       const itemsForUser = allItems.filter((item) => allowed.has(item.watchTargetId));
-      const itemsByTarget = new Map<Id<"watchTargets">, typeof allItems>();
-      for (const item of itemsForUser) {
-        const list = itemsByTarget.get(item.watchTargetId) ?? [];
-        list.push(item);
-        itemsByTarget.set(item.watchTargetId, list);
-      }
 
       // Team-filtered users: do not leak run-wide executive summary when they have no allowed items.
       const showExecutiveSummary = subIds === null || itemsForUser.length > 0;
-
-      const hubHref = hrefAttrFromBase(appUrl, "/targets");
-      let bodyHtml = `<h1 style="font-size:18px;margin:0 0 12px;">Compass ${digestRun.period} digest — ${escapeHtml(dateStr)}</h1>`;
-      if (showExecutiveSummary) {
-        bodyHtml += `<p style="margin:0 0 16px;line-height:1.5;">${escapeHtml(digestRun.executiveSummary)}</p>`;
-      }
-
-      const hasDecisionBrief =
-        (digestRun.deltaSummary?.trim() ?? "") !== "" ||
-        (digestRun.materialitySummary?.trim() ?? "") !== "" ||
-        (digestRun.recommendedActionsSummary?.trim() ?? "") !== "" ||
-        (digestRun.strategicReadSummary?.trim() ?? "") !== "" ||
-        digestRun.confidence != null;
-      if (showExecutiveSummary && hasDecisionBrief) {
-        bodyHtml += `<div style="margin:0 0 16px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;">`;
-        bodyHtml += `<p style="margin:0 0 8px;font-weight:600;font-size:14px;">Decision brief</p>`;
-        if (digestRun.confidence != null) {
-          bodyHtml += `<p style="margin:0 0 8px;font-size:12px;color:#4b5563;">Confidence: <strong>${escapeHtml(digestRun.confidence)}</strong></p>`;
-        }
-        if (digestRun.deltaSummary?.trim()) {
-          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;"><strong>What changed</strong><br/>${escapeHtml(digestRun.deltaSummary)}</p>`;
-        }
-        if (digestRun.materialitySummary?.trim()) {
-          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;"><strong>Why it matters</strong><br/>${escapeHtml(digestRun.materialitySummary)}</p>`;
-        }
-        if (digestRun.strategicReadSummary?.trim()) {
-          bodyHtml += `<p style="margin:0 0 6px;font-size:13px;white-space:pre-wrap;"><strong>Strategic read</strong><br/>${escapeHtml(digestRun.strategicReadSummary)}</p>`;
-        }
-        if (digestRun.recommendedActionsSummary?.trim()) {
-          bodyHtml += `<p style="margin:0;font-size:13px;white-space:pre-wrap;"><strong>Suggested next steps</strong><br/>${escapeHtml(digestRun.recommendedActionsSummary)}</p>`;
-        }
-        bodyHtml += `</div>`;
-      }
-
-      const sortedTargetIds = [...itemsByTarget.keys()].sort((a, b) => {
-        const na = targetById.get(a)?.displayName ?? "";
-        const nb = targetById.get(b)?.displayName ?? "";
-        return na.localeCompare(nb);
+      const bodyHtml = buildDigestEmailHtml({
+        appUrl,
+        period: digestRun.period,
+        dateStr,
+        executiveSummary: digestRun.executiveSummary,
+        showExecutiveSummary,
+        deltaSummary: digestRun.deltaSummary,
+        materialitySummary: digestRun.materialitySummary,
+        strategicReadSummary: digestRun.strategicReadSummary,
+        recommendedActionsSummary: digestRun.recommendedActionsSummary,
+        confidence: digestRun.confidence,
+        items: itemsForUser,
+        targetDisplayNameById: new Map(
+          [...targetById.entries()].map(([id, target]) => [String(id), target?.displayName ?? ""]),
+        ),
       });
-
-      for (const tid of sortedTargetIds) {
-        const t = targetById.get(tid);
-        const name = t?.displayName ?? "Watch target";
-        const digestHref = hrefAttrFromBase(appUrl, `/targets/${tid}/digests`);
-        bodyHtml += `<h2 style="font-size:15px;margin:20px 0 8px;border-bottom:1px solid #e5e7eb;padding-bottom:4px;">${escapeHtml(name)}</h2>`;
-        bodyHtml += `<p style="margin:0 0 8px;font-size:13px;"><a href="${digestHref}">View full digest for ${escapeHtml(name)}</a></p>`;
-        const items = itemsByTarget.get(tid) ?? [];
-        bodyHtml += "<ul style=\"margin:0;padding-left:1.25rem;\">";
-        for (const it of items) {
-          const sig = it.significance;
-          const cat = it.category.replace(/_/g, " ");
-          bodyHtml += `<li style="margin-bottom:10px;line-height:1.45;"><strong>${escapeHtml(sig)}</strong> · ${escapeHtml(cat)} — ${escapeHtml(it.headline)}`;
-          if (it.synthesis && it.synthesis.length > 0) {
-            const syn = it.synthesis.length > 220 ? `${it.synthesis.slice(0, 220)}…` : it.synthesis;
-            bodyHtml += `<br/><span style="font-size:13px;color:#4b5563;">${escapeHtml(syn)}</span>`;
-          }
-          bodyHtml += "</li>";
-        }
-        bodyHtml += "</ul>";
-      }
-
-      if (sortedTargetIds.length === 0) {
-        bodyHtml += `<p style="margin:12px 0;color:#6b7280;font-size:14px;">No per-target signals in this digest for you. <a href="${hubHref}">Open Watch Targets</a></p>`;
-      }
-
-      bodyHtml += `<p style="margin-top:20px;font-size:13px;"><a href="${hubHref}">Open Compass — Watch Targets</a></p>`;
 
       const multi = scanRun.targetIds.length > 1;
       const subject = multi
