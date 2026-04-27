@@ -4,6 +4,10 @@ import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import {
+  isDecisionBriefEnabledByDefault,
+  resolveDecisionBriefEnabled,
+} from "../lib/digestDecisionPreference";
 
 function escapeHtml(text: string): string {
   return text
@@ -82,6 +86,7 @@ export function buildDigestEmailHtml(args: {
   strategicReadSummary?: string;
   recommendedActionsSummary?: string;
   confidence?: string;
+  includeDecisionBrief: boolean;
   items: DigestEmailRenderableItem[];
   targetDisplayNameById: Map<string, string>;
 }): string {
@@ -96,6 +101,7 @@ export function buildDigestEmailHtml(args: {
     strategicReadSummary,
     recommendedActionsSummary,
     confidence,
+    includeDecisionBrief,
     items,
     targetDisplayNameById,
   } = args;
@@ -127,7 +133,7 @@ export function buildDigestEmailHtml(args: {
     (recommendedActionsSummary?.trim() ?? "") !== "" ||
     (strategicReadSummary?.trim() ?? "") !== "" ||
     confidence != null;
-  if (showExecutiveSummary && hasDecisionBrief) {
+  if (showExecutiveSummary && includeDecisionBrief && hasDecisionBrief) {
     bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
     bodyHtml += `<h2 style="margin:0 0 10px;font-weight:600;font-size:16px;line-height:1.4;">Decision brief</h2>`;
     if (confidence != null) {
@@ -261,20 +267,46 @@ export const sendDigestEmail = internalAction({
       dateStyle: "medium",
     });
 
-    type Recipient = { userId: Id<"users">; email: string };
+    type Recipient = {
+      userId: Id<"users">;
+      email: string;
+      decisionBriefPreference?: "inherit" | "enabled" | "disabled";
+    };
     let recipients: Recipient[] = [];
 
     if (scanRun.digestNotifyUserIds && scanRun.digestNotifyUserIds.length > 0) {
       const uniqueIds = [...new Set(scanRun.digestNotifyUserIds)];
       for (const uid of uniqueIds) {
         const user = await ctx.runQuery(internal.users.getUserById, { id: uid });
-        if (user?.email) recipients.push({ userId: uid, email: user.email });
+        if (user?.email) {
+          recipients.push({
+            userId: uid,
+            email: user.email,
+            decisionBriefPreference:
+              user.decisionBriefPreference === "enabled" ||
+              user.decisionBriefPreference === "disabled" ||
+              user.decisionBriefPreference === "inherit"
+                ? user.decisionBriefPreference
+                : undefined,
+          });
+        }
       }
     } else {
       const first = targets[0];
       if (first?.userId) {
         const user = await ctx.runQuery(internal.users.getUserById, { id: first.userId });
-        if (user?.email) recipients.push({ userId: first.userId, email: user.email });
+        if (user?.email) {
+          recipients.push({
+            userId: first.userId,
+            email: user.email,
+            decisionBriefPreference:
+              user.decisionBriefPreference === "enabled" ||
+              user.decisionBriefPreference === "disabled" ||
+              user.decisionBriefPreference === "inherit"
+                ? user.decisionBriefPreference
+                : undefined,
+          });
+        }
       }
     }
 
@@ -283,7 +315,10 @@ export const sendDigestEmail = internalAction({
       return;
     }
 
-    for (const { userId, email } of recipients) {
+    const systemDecisionBriefDefault = isDecisionBriefEnabledByDefault(
+      process.env.DECISION_DIGEST_ENABLED,
+    );
+    for (const { userId, email, decisionBriefPreference } of recipients) {
       const subIds = await ctx.runQuery(
         internal.targetSubscriptions.getSubscribedWatchTargetIdsForUserInternal,
         { userId },
@@ -306,6 +341,10 @@ export const sendDigestEmail = internalAction({
         strategicReadSummary: digestRun.strategicReadSummary,
         recommendedActionsSummary: digestRun.recommendedActionsSummary,
         confidence: digestRun.confidence,
+        includeDecisionBrief: resolveDecisionBriefEnabled(
+          decisionBriefPreference,
+          systemDecisionBriefDefault,
+        ),
         items: itemsForUser,
         targetDisplayNameById: new Map(
           [...targetById.entries()].map(([id, target]) => [String(id), target?.displayName ?? ""]),

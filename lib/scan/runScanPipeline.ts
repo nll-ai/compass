@@ -13,10 +13,13 @@ import {
   type DigestTargetInfo,
   type PriorDigestDecisionContext,
 } from "./digest";
-import { isDecisionDigestGenerationEnabled } from "../decisionDigest";
 import type { ScanOptions, ScanTarget } from "./types";
 import type { FeedbackForMission } from "./agent-context";
 import { normalizePubmedPubDateInput } from "./pubmed-esearch-dates";
+import {
+  isDecisionBriefEnabledByDefault,
+  resolveDecisionBriefEnabled,
+} from "../digestDecisionPreference";
 
 /** Request body for `POST /api/scan` and shared pipeline (PubMed-only route uses the same shape with `sources`). */
 export type ScanPostBody = {
@@ -234,8 +237,31 @@ export async function runScanPipeline({
         scanRunId,
       });
       const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
+      const systemDecisionBriefDefault = isDecisionBriefEnabledByDefault(
+        process.env.DECISION_DIGEST_ENABLED,
+      );
+      let shouldGenerateDecisionDigest = systemDecisionBriefDefault;
+      if (scan?.digestNotifyUserIds?.length) {
+        const prefRows = await client.query(
+          api.users.getDecisionBriefPreferencesForUsersFromServer,
+          {
+            secret: effectiveSecret,
+            userIds: scan.digestNotifyUserIds,
+          },
+        );
+        const prefByUserId = new Map(
+          prefRows.map((row) => [String(row.userId), row.decisionBriefPreference]),
+        );
+        shouldGenerateDecisionDigest = scan.digestNotifyUserIds.some((uid) =>
+          resolveDecisionBriefEnabled(
+            prefByUserId.get(String(uid)),
+            systemDecisionBriefDefault,
+          ),
+        );
+      }
+
       let priorDigestContext: PriorDigestDecisionContext[] | undefined;
-      if (env.GROQ_API_KEY && isDecisionDigestGenerationEnabled()) {
+      if (env.GROQ_API_KEY && shouldGenerateDecisionDigest) {
         priorDigestContext = await client.query(api.digestRuns.listPriorDecisionContextFromServer, {
           secret: effectiveSecret,
           scanRunId,
@@ -258,6 +284,7 @@ export async function runScanPipeline({
             env.GROQ_API_KEY,
             feedbackContext,
             priorDigestContext,
+            { useDecisionDigest: shouldGenerateDecisionDigest },
           )
         : await generateDigest(
             newItems,

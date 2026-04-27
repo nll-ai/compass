@@ -227,6 +227,7 @@ export async function generateDigestWithAI(
   groqApiKey: string | undefined,
   _feedbackContext?: FeedbackContext,
   priorDigestContext?: PriorDigestDecisionContext[],
+  options?: { useDecisionDigest?: boolean },
 ): Promise<DigestPayload> {
   const targetIdToIndex = new Map<Id<"watchTargets">, number>(targets.map((t, i) => [t._id, i]));
   const targetNames = new Map<Id<"watchTargets">, string>(targets.map((t) => [t._id, t.displayName]));
@@ -259,7 +260,7 @@ export async function generateDigestWithAI(
     )
     .join("\n");
 
-  const useDecisionDigest = isDecisionDigestGenerationEnabled();
+  const useDecisionDigest = options?.useDecisionDigest ?? isDecisionDigestGenerationEnabled();
   const schema = useDecisionDigest ? digestAISchemaWithDecision : digestAISchema;
 
   const priorBlock =
@@ -390,20 +391,12 @@ export async function generateDigest(
   };
 }
 
-const LLM_BACKFILL_ERROR_DETAIL_MAX = 700;
-
-function truncateForUserMessage(s: string, max = LLM_BACKFILL_ERROR_DETAIL_MAX): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
-}
-
 export type GenerateDecisionDigestSectionsForBackfillResult =
   | { ok: true; sections: DecisionDigestSections }
   | {
       ok: false;
       reason: "no_api_key" | "no_items" | "empty_sections" | "llm_error";
-      /** Groq / AI SDK message, truncated for safe display */
+      /** Groq / AI SDK message for UI/debugging */
       detail?: string;
     };
 
@@ -481,6 +474,11 @@ ${JSON.stringify(sourcesContext, null, 2)}`,
     return { ok: true, sections: merged };
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
-    return { ok: false, reason: "llm_error", detail: truncateForUserMessage(raw) };
+    if (e instanceof Error) {
+      console.error("generateDecisionDigestSectionsForBackfill: llm_error", raw, e.stack ?? "");
+    } else {
+      console.error("generateDecisionDigestSectionsForBackfill: llm_error", raw);
+    }
+    return { ok: false, reason: "llm_error", detail: raw.trim() };
   }
 }

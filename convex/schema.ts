@@ -42,6 +42,10 @@ export default defineSchema({
     teamId: v.optional(v.id("teams")),
     /** `solo`: left a team; no auto team assignment (users are not placed on a team until create or invite). */
     teamPreference: v.optional(v.union(v.literal("solo"))),
+    /** Per-user override for Decision brief inclusion in digest emails. */
+    decisionBriefPreference: v.optional(
+      v.union(v.literal("inherit"), v.literal("enabled"), v.literal("disabled")),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

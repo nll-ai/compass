@@ -33,15 +33,16 @@ This document specifies implementation-level details: modules, Convex functions,
 | `convex/userDigestSchedule.ts` | `get`, `set`, `remove` (per-user global digest schedule). |
 | `convex/scanSchedule.ts` | `checkAndTrigger` only (cron: `userDigestSchedule` groups → `scheduleScan` + `digestNotifyUserIds`). |
 | `convex/crons.ts` | Intervals: `check-scan-schedule` (1 min) → `scanSchedule.checkAndTrigger`; `reconcile-stale-scans` (15 min) → `scans.reconcileStaleScanRuns`. |
-| `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; optional args `deltaSummary`, `materialitySummary`, `recommendedActionsSummary`, `confidence`; both schedule `internal.email.sendDigestEmail` after insert. |
+| `convex/digests.ts` | `createDigestRunWithItemsFromServer`, `createDigestRunWithItems`; optional args `deltaSummary`, `materialitySummary`, `strategicReadSummary`, `recommendedActionsSummary`, `confidence`; both schedule `internal.email.sendDigestEmail` after insert. |
 | `convex/digestRuns.ts` | `getById` (internal), `getBySourceLinksHashInternal` (internal), `getBySourceLinksHashFromServer` (SCAN_SECRET), `get`, `listSignalReportsForTarget`, `remove` (deletes `digestItemComments` for each item, then items, then run), etc. |
 | `convex/digestGenerate.ts` | Internal rule-based digest when the scan API path does not create a run; **does not** populate Decision Digest fields (those come from Next.js `generateDigestWithAI` when `DECISION_DIGEST_ENABLED=true`). |
-| `convex/users.ts` | `getUserById` (internal), **`getMe`** (signed-in user `{ _id, email }` or null). |
+| `convex/users.ts` | `getUserById` (internal), **`getMe`** (signed-in user row with `decisionBriefPreference`), `getDecisionBriefPreference` (effective + system default), `setDecisionBriefPreference`, `getDecisionBriefPreferencesForUsersFromServer` (server-gated recipient prefs for scan pipeline). |
 | `convex/email.ts` | `buildDigestEmailHtml` (shared digest HTML renderer used by email action and tests), `sendDigestEmail`, `sendTeamInviteEmail` (internal actions, `"use node"`): Resend HTML; team invite uses `APP_URL` + `?teamInvite=` token. |
 | `__tests__/emailDigestHtml.test.ts` | Verifies `buildDigestEmailHtml` parity (Decision brief + signal-card structure) and safety (escaped text and unsafe `href` fallback to `"#"`). |
 | `convex/scans.ts` | `listRunning`, `listRecent`, `listScanHistory` (visible targets: **completed** / **failed** only; filter + sort by `completedAt` ?? `startedAt` ?? `scheduledFor`; capped read from `by_scheduledFor` then per-run `digestRuns` lookup via `by_scanRun`); `get`, `getSourceStatuses` (visible targets); `dismissStuckScanRun` (auth: visible targets, pending/running → failed); `markScanRunFailedFromServer` (`SCAN_SECRET`, run + incomplete sources); shared helper `failScanRunWithSources`; `reconcileStaleScanRuns` (internal cron: pending **1h** after `scheduledFor`, running **30m** after `startedAt` ?? `scheduledFor`); `getScanRun` (internal), `scheduleScan` (internal, optional `digestNotifyUserIds`), `callScanApi` (internal action). No per-target schedule APIs. |
 | `convex/digestItems.ts` | `listByDigestRun` (`userOwnsDigestRun`), `listByWatchTarget` / `setFeedback` (`canViewWatchTarget`), **`setWorkflowStatus`**, **`setAssignee`** (assignee must be target owner or same `teamId`), **`addComment`**, **`listComments`**, `getFeedbackWithRawContent`, `listByDigestRunInternal` (email). |
-| `lib/scan/digest.ts` | Digest LLM + rule-based generation; when `DECISION_DIGEST_ENABLED=true` on the Next.js server, AI path requests merged schema with Decision Digest sections (`lib/decisionDigest.ts`). |
+| `lib/scan/digest.ts` | Digest LLM + rule-based generation; AI path requests merged schema with Decision Digest sections when caller enables decision mode (defaults to `DECISION_DIGEST_ENABLED=true` unless overridden by scan pipeline intent). |
+| `lib/digestDecisionPreference.ts` | Shared resolver for Decision brief preference (`inherit` \| `enabled` \| `disabled`) over system default flag. |
 | `lib/telemetry/decisionDigest.ts` | `trackDigestDetailViewed` — no-op unless `NEXT_PUBLIC_DIGEST_TELEMETRY=1`. |
 | `eval/diff/` + `scripts/diff-eval.ts` | Offline diff corpus (YAML-first; `expected_facts` for recall, `extractedFacts` in model output for precision/unsupported-claim checks) + CLI; **score** supports `--no-judge` or LLM judge + composite `0.5×det + 0.5×judge`; **report** writes `scorecard.md` and `case_reports/<caseId>.md`. **`scripts/seed-diff-eval-corpus.ts`** seeds ≥15 cases; **`npm run diff-eval-verify`** checks corpus + optional `--with-llm` pipeline. See `eval/diff/README.md`. |
 | `convex/lib/auth.ts` | `getOrCreateUserId`, `getUserIdFromIdentity`, `getVisibleWatchTargetIds`, **`canViewWatchTarget`** (same-team visibility), **`isWatchTargetOwner`** / **`watchTargetRowOwnerIs`** (row `userId` = owner for mutations), `userOwnsDigestRun`. No automatic team assignment on sign-in. |
@@ -130,6 +131,8 @@ This document specifies implementation-level details: modules, Convex functions,
 - **userDigestSchedule.get** (query) — current user’s row or null.  
 - **userDigestSchedule.set** (mutation) — upsert parsed schedule fields (+ clears last-run keys).  
 - **userDigestSchedule.remove** (mutation) — delete row.
+- **users.getDecisionBriefPreference** (query) — returns `{ preference, systemDefaultEnabled, effectiveEnabled }` for Settings Digest panel.  
+- **users.setDecisionBriefPreference** (mutation) — persists per-user Decision brief email preference (`inherit` \| `enabled` \| `disabled`) on the user row.
 
 ### 2.4 Cron digest schedule and stale scans
 
@@ -165,7 +168,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 - **email.sendDigestEmail** (internal action)  
   Args: `{ digestRunId }`.  
-  Loads digest items; uses `scanRuns.digestNotifyUserIds` when set; delegates HTML composition to `buildDigestEmailHtml` so rendering semantics are shared and directly testable; Resend HTML matches digest detail semantics (optional Decision brief, signals count, per-target sections, per-signal cards with significance/category pills, headline, synthesis, and source links); `href` values for app links and external source links are validated to `http`/`https` before render; subscription filter for team users via `getSubscribedWatchTargetIdsForUserInternal`.
+  Loads digest items; uses `scanRuns.digestNotifyUserIds` when set; resolves per-recipient Decision brief visibility from `users.decisionBriefPreference` over system default; delegates HTML composition to `buildDigestEmailHtml` so rendering semantics are shared and directly testable; Resend HTML matches digest detail semantics (optional Decision brief, signals count, per-target sections, per-signal cards with significance/category pills, headline, synthesis, and source links); `href` values for app links and external source links are validated to `http`/`https` before render; subscription filter for team users via `getSubscribedWatchTargetIdsForUserInternal`.
 
 - **email.sendTeamInviteEmail** (internal action)  
   Args: `{ inviteId }` (scheduled from `teams.inviteTeamMemberByEmail`).  
@@ -244,7 +247,7 @@ This document specifies implementation-level details: modules, Convex functions,
 
 ### 5.2 users, teams, targetSubscriptions, userDigestSchedule, scanRuns
 
-- **users:** `workosId`, `email`, `teamId?`, `teamPreference?` (`"solo"` after leave; no auto team on sign-in), …; indexes `by_workosId`, `by_teamId`.
+- **users:** `workosId`, `email`, `teamId?`, `teamPreference?` (`"solo"` after leave; no auto team on sign-in), `decisionBriefPreference?` (`"inherit"` \| `"enabled"` \| `"disabled"`), …; indexes `by_workosId`, `by_teamId`.
 - **teams:** `name`, `domain?` (legacy / bootstrap), `ownerUserId?` (admin), `createdAt`, `updatedAt`; index `by_domain`.
 - **teamEmailInvites:** `teamId`, `emailLower`, `token`, `createdByUserId`, `createdAt`, `expiresAt`, `revokedAt?`, `acceptedAt?`; indexes `by_token`, `by_teamId`, `by_team_email`, `by_emailLower`.
 - **targetSubscriptions:** `userId`, `watchTargetId`, `subscribedAt`; indexes `by_userId`, `by_watchTarget`, `by_user_target`.
@@ -288,7 +291,7 @@ This document specifies implementation-level details: modules, Convex functions,
 2. Mutation calls `ctx.scheduler.runAfter(0, internal.email.sendDigestEmail, { digestRunId })`.
 3. Action runs: load digest run, scan run, all digest items (`listByDigestRunInternal`), targets (`getByIdsInternal`).
 4. For each recipient (`digestNotifyUserIds` or first target owner): resolve `user.email`, filter items by subscription when `user.teamId` is set.
-5. If `RESEND_API_KEY` is set: POST to Resend with HTML (executive summary, optional **Decision brief** block when run fields are set, top-level signals count, per-target sections, per-signal cards with source links, and links to `/targets/{id}/digests` and `/targets`).
+5. If `RESEND_API_KEY` is set: POST to Resend with HTML (executive summary, optional **Decision brief** block when run fields are set and recipient preference resolves enabled, top-level signals count, per-target sections, per-signal cards with source links, and links to `/targets/{id}/digests` and `/targets`).
 
 ---
 

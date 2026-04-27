@@ -57,9 +57,8 @@ export function DecisionBriefCard(props: {
         <div className="stack" style={{ gap: "0.75rem" }}>
           <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.5 }} className="muted">
             No AI decision framing was stored for this digest. You can generate it from the sources
-            already linked to this run (Groq + saved raw items), or enable{" "}
-            <code style={{ fontSize: "0.85em" }}>DECISION_DIGEST_ENABLED=true</code> for{" "}
-            <strong>future</strong> scans.
+            already linked to this run (Groq + saved raw items), or change your Decision brief
+            preference in <strong>Settings → Digest schedule</strong> for future digest emails.
           </p>
           {digestRunId ? (
             <div className="stack" style={{ gap: "0.5rem" }}>

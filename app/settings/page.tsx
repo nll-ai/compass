@@ -47,9 +47,14 @@ export default function SettingsPage() {
   const { isLoading: convexAuthLoading, isAuthenticated } = useConvexAuth();
   const skipQueries = useConvexAuthQuerySkip();
   const userSchedule = useQuery(api.userDigestSchedule.get, skipQueries ? "skip" : {});
+  const decisionBriefPreference = useQuery(
+    api.users.getDecisionBriefPreference,
+    skipQueries ? "skip" : {},
+  );
   const membership = useQuery(api.teams.getMyMembership, skipQueries ? "skip" : {});
   const teamMembers = useQuery(api.teams.listTeamMembers, skipQueries ? "skip" : {});
   const setUserSchedule = useMutation(api.userDigestSchedule.set);
+  const setDecisionBriefPreference = useMutation(api.users.setDecisionBriefPreference);
   const removeUserSchedule = useMutation(api.userDigestSchedule.remove);
   const createTeam = useMutation(api.teams.createTeam);
   const leaveTeam = useMutation(api.teams.leaveTeam);
@@ -81,7 +86,13 @@ export default function SettingsPage() {
   const [description, setDescription] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
   const [saving, setSaving] = useState(false);
+  const [decisionPrefSaving, setDecisionPrefSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [decisionPrefError, setDecisionPrefError] = useState<string | null>(null);
+  const [decisionPrefMessage, setDecisionPrefMessage] = useState<string | null>(null);
+  const [decisionPrefDraft, setDecisionPrefDraft] = useState<"inherit" | "enabled" | "disabled">(
+    "inherit",
+  );
   const [newTeamName, setNewTeamName] = useState("");
   const [teamBusy, setTeamBusy] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
@@ -104,6 +115,11 @@ export default function SettingsPage() {
     const n = membership?.team?.name;
     if (typeof n === "string") setRenameDraft(n);
   }, [membership?.team?.name]);
+
+  useEffect(() => {
+    if (decisionBriefPreference === undefined) return;
+    setDecisionPrefDraft(decisionBriefPreference.preference);
+  }, [decisionBriefPreference]);
 
   if (convexAuthLoading) {
     return (
@@ -586,10 +602,101 @@ export default function SettingsPage() {
         <h2 id="digest-schedule-heading" style={{ margin: 0, fontSize: "1.1rem" }}>
           Digest schedule
         </h2>
-        <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+        <p id="digest-schedule-help" className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
           This is the <strong>only</strong> automatic scan schedule: one combined daily or weekly run of your subscribed watch
           targets (team) or owned active targets (solo), plus one digest email. Manual “Run scan” on each target is unchanged.
         </p>
+        <label style={{ display: "block" }}>
+          <span className="muted" style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.85rem" }}>
+            Decision brief in digest emails
+          </span>
+          <select
+            value={decisionPrefDraft}
+            disabled={decisionBriefPreference === undefined || decisionPrefSaving}
+            onChange={(e) => {
+              setDecisionPrefError(null);
+              setDecisionPrefMessage(null);
+              setDecisionPrefDraft(e.target.value as "inherit" | "enabled" | "disabled");
+            }}
+            className="card"
+            style={{ padding: "0.5rem", maxWidth: 360 }}
+            aria-label="Decision brief preference for digest emails"
+          >
+            <option value="inherit">
+              Use workspace default
+              {decisionBriefPreference
+                ? ` (currently ${decisionBriefPreference.systemDefaultEnabled ? "on" : "off"})`
+                : ""}
+            </option>
+            <option value="enabled">Always include decision brief</option>
+            <option value="disabled">Never include decision brief</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={
+            decisionBriefPreference === undefined ||
+            decisionPrefSaving ||
+            decisionPrefDraft === decisionBriefPreference.preference
+          }
+          aria-busy={decisionPrefSaving}
+          className="card"
+          style={{
+            alignSelf: "flex-start",
+            padding: "0.45rem 0.85rem",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            borderRadius: 8,
+            border: "none",
+            cursor:
+              decisionBriefPreference === undefined ||
+              decisionPrefSaving ||
+              decisionPrefDraft === decisionBriefPreference.preference
+                ? "not-allowed"
+                : "pointer",
+            background: "var(--ink, #111827)",
+            color: "white",
+            opacity:
+              decisionBriefPreference === undefined ||
+              decisionPrefSaving ||
+              decisionPrefDraft === decisionBriefPreference.preference
+                ? 0.5
+                : 1,
+          }}
+          onClick={async () => {
+            setDecisionPrefError(null);
+            setDecisionPrefMessage(null);
+            setDecisionPrefSaving(true);
+            try {
+              await setDecisionBriefPreference({ preference: decisionPrefDraft });
+              setDecisionPrefMessage("Decision brief preference saved.");
+            } catch (err) {
+              setDecisionPrefError(
+                err instanceof Error ? err.message : "Could not update decision brief preference",
+              );
+            } finally {
+              setDecisionPrefSaving(false);
+            }
+          }}
+        >
+          {decisionPrefSaving ? "Saving preference…" : "Save preference"}
+        </button>
+        <p id="decision-brief-pref-help" className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
+          Controls whether your digest emails include the Decision brief section when decision fields exist on that run.
+          {decisionBriefPreference
+            ? ` Effective: ${decisionBriefPreference.effectiveEnabled ? "included" : "hidden"}.`
+            : ""}
+        </p>
+        {decisionPrefMessage && (
+          <p style={{ margin: 0, color: "var(--success, #059669)", fontSize: "0.9rem" }} role="status" aria-live="polite">
+            {decisionPrefMessage}
+          </p>
+        )}
+        {decisionPrefError && (
+          <p style={{ margin: 0, color: "var(--error, #b91c1c)", fontSize: "0.9rem" }} role="alert">
+            {decisionPrefError}
+          </p>
+        )}
         {userSchedule === undefined ? (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
         ) : userSchedule === null ? (
@@ -659,6 +766,7 @@ export default function SettingsPage() {
               className="card"
               style={{ width: "100%", maxWidth: 420, padding: "0.5rem" }}
               aria-label="Natural language digest schedule"
+              aria-describedby="digest-schedule-help"
             />
           </label>
           <label style={{ display: "block" }}>
@@ -696,7 +804,7 @@ export default function SettingsPage() {
               opacity: saving ? 0.7 : 1,
             }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving schedule…" : "Save schedule"}
           </button>
         </form>
         {error && (

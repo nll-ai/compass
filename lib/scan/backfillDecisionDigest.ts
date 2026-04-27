@@ -139,7 +139,9 @@ export async function backfillOneDigestRun(options: {
     if (!decision.ok) {
       const err =
         decision.reason === "llm_error" && decision.detail
-          ? `llm_error: ${decision.detail}`
+          ? /forbidden/i.test(decision.detail)
+            ? "llm_error_forbidden: Groq rejected this request (API key/model access). Verify GROQ_API_KEY and model access in your Groq project."
+            : `llm_error: ${decision.detail}`
           : decision.reason === "empty_sections"
             ? "llm_empty_sections: Model returned only empty text for decision sections (check GROQ_MODEL_SMART / prompt or retry)."
             : decision.reason;

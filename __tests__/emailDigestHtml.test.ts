@@ -14,6 +14,7 @@ describe("buildDigestEmailHtml", () => {
       strategicReadSummary: "[Hypothesis] Competitor posture changed.",
       recommendedActionsSummary: "Validate assumptions with KOLs.",
       confidence: "medium",
+      includeDecisionBrief: true,
       items: [
         {
           watchTargetId: "t-alpha",
@@ -48,6 +49,7 @@ describe("buildDigestEmailHtml", () => {
       dateStr: "Apr 20, 2026",
       executiveSummary: "<b>unsafe</b>",
       showExecutiveSummary: true,
+      includeDecisionBrief: true,
       items: [
         {
           watchTargetId: "t-one",
@@ -65,5 +67,24 @@ describe("buildDigestEmailHtml", () => {
     expect(html).toContain("Headline &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).toContain("Body with &lt;b&gt;tag&lt;/b&gt;");
     expect(html).toContain('href="#"');
+  });
+
+  it("hides decision brief when recipient preference disables it", () => {
+    const html = buildDigestEmailHtml({
+      appUrl: "https://compass.example.com",
+      period: "daily",
+      dateStr: "Apr 20, 2026",
+      executiveSummary: "Summary.",
+      showExecutiveSummary: true,
+      deltaSummary: "Changed.",
+      materialitySummary: "Matters.",
+      strategicReadSummary: "Read.",
+      recommendedActionsSummary: "Act.",
+      confidence: "high",
+      includeDecisionBrief: false,
+      items: [],
+      targetDisplayNameById: new Map(),
+    });
+    expect(html).not.toContain("Decision brief");
   });
 });
