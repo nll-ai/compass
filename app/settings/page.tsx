@@ -6,6 +6,10 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatSchedule, COMMON_TIMEZONES } from "@/lib/formatSchedule";
 import { useConvexAuthQuerySkip } from "@/lib/convexAuthQuery";
+import {
+  DEFAULT_LOOKBACK_DAYS,
+  DIGEST_EMAIL_LOOKBACK_CHOICES,
+} from "@/lib/scan/lookback";
 
 function SettingsTeamInviteFromUrl({
   onAccepted,
@@ -46,6 +50,7 @@ function SettingsTeamInviteFromUrl({
 export default function SettingsPage() {
   const { isLoading: convexAuthLoading, isAuthenticated } = useConvexAuth();
   const skipQueries = useConvexAuthQuerySkip();
+  const userMe = useQuery(api.users.getMe, skipQueries ? "skip" : {});
   const userSchedule = useQuery(api.userDigestSchedule.get, skipQueries ? "skip" : {});
   const decisionBriefPreference = useQuery(
     api.users.getDecisionBriefPreference,
@@ -55,6 +60,7 @@ export default function SettingsPage() {
   const teamMembers = useQuery(api.teams.listTeamMembers, skipQueries ? "skip" : {});
   const setUserSchedule = useMutation(api.userDigestSchedule.set);
   const setDecisionBriefPreference = useMutation(api.users.setDecisionBriefPreference);
+  const setDigestEmailLookbackDays = useMutation(api.users.setDigestEmailLookbackDays);
   const removeUserSchedule = useMutation(api.userDigestSchedule.remove);
   const createTeam = useMutation(api.teams.createTeam);
   const leaveTeam = useMutation(api.teams.leaveTeam);
@@ -93,6 +99,10 @@ export default function SettingsPage() {
   const [decisionPrefDraft, setDecisionPrefDraft] = useState<"inherit" | "enabled" | "disabled">(
     "inherit",
   );
+  const [digestLookbackDraft, setDigestLookbackDraft] = useState<number>(DEFAULT_LOOKBACK_DAYS);
+  const [digestLookbackSaving, setDigestLookbackSaving] = useState(false);
+  const [digestLookbackMessage, setDigestLookbackMessage] = useState<string | null>(null);
+  const [digestLookbackError, setDigestLookbackError] = useState<string | null>(null);
   const [newTeamName, setNewTeamName] = useState("");
   const [teamBusy, setTeamBusy] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
@@ -120,6 +130,11 @@ export default function SettingsPage() {
     if (decisionBriefPreference === undefined) return;
     setDecisionPrefDraft(decisionBriefPreference.preference);
   }, [decisionBriefPreference]);
+
+  useEffect(() => {
+    if (userMe === undefined || userMe === null) return;
+    setDigestLookbackDraft(userMe.digestEmailLookbackDays ?? DEFAULT_LOOKBACK_DAYS);
+  }, [userMe]);
 
   if (convexAuthLoading) {
     return (
@@ -697,6 +712,96 @@ export default function SettingsPage() {
             {decisionPrefError}
           </p>
         )}
+        <div className="stack" style={{ gap: "0.5rem" }}>
+          <label htmlFor="digest-email-lookback" style={{ display: "block" }}>
+            <span className="muted" style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.85rem" }}>
+              Digest email — sources from the last N days
+            </span>
+            <select
+              id="digest-email-lookback"
+              value={digestLookbackDraft}
+              disabled={userMe === undefined || digestLookbackSaving}
+              onChange={(e) => {
+                setDigestLookbackError(null);
+                setDigestLookbackMessage(null);
+                setDigestLookbackDraft(Number(e.target.value));
+              }}
+              className="card"
+              style={{ padding: "0.5rem", maxWidth: 360 }}
+              aria-label="Number of calendar days of source recency to include in digest emails"
+              aria-describedby="digest-email-lookback-help"
+            >
+              {DIGEST_EMAIL_LOOKBACK_CHOICES.map((n) => (
+                <option key={n} value={n}>
+                  Last {n} days
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={
+              userMe === undefined ||
+              digestLookbackSaving ||
+              digestLookbackDraft === (userMe?.digestEmailLookbackDays ?? DEFAULT_LOOKBACK_DAYS)
+            }
+            aria-busy={digestLookbackSaving}
+            className="card"
+            style={{
+              alignSelf: "flex-start",
+              padding: "0.45rem 0.85rem",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              borderRadius: 8,
+              border: "none",
+              cursor:
+                userMe === undefined ||
+                digestLookbackSaving ||
+                digestLookbackDraft === (userMe?.digestEmailLookbackDays ?? DEFAULT_LOOKBACK_DAYS)
+                  ? "not-allowed"
+                  : "pointer",
+              background: "var(--ink, #111827)",
+              color: "white",
+              opacity:
+                userMe === undefined ||
+                digestLookbackSaving ||
+                digestLookbackDraft === (userMe?.digestEmailLookbackDays ?? DEFAULT_LOOKBACK_DAYS)
+                  ? 0.5
+                  : 1,
+            }}
+            onClick={async () => {
+              setDigestLookbackError(null);
+              setDigestLookbackMessage(null);
+              setDigestLookbackSaving(true);
+              try {
+                await setDigestEmailLookbackDays({ days: digestLookbackDraft });
+                setDigestLookbackMessage("Digest email window saved.");
+              } catch (err) {
+                setDigestLookbackError(
+                  err instanceof Error ? err.message : "Could not update digest email window",
+                );
+              } finally {
+                setDigestLookbackSaving(false);
+              }
+            }}
+          >
+            {digestLookbackSaving ? "Saving…" : "Save email window"}
+          </button>
+          <p id="digest-email-lookback-help" className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
+            Digest emails list only signals whose linked sources fall in this window (by publication or ingestion
+            time). Targets with nothing recent still appear with a short note.
+          </p>
+          {digestLookbackMessage && (
+            <p style={{ margin: 0, color: "var(--success, #059669)", fontSize: "0.9rem" }} role="status" aria-live="polite">
+              {digestLookbackMessage}
+            </p>
+          )}
+          {digestLookbackError && (
+            <p style={{ margin: 0, color: "var(--error, #b91c1c)", fontSize: "0.9rem" }} role="alert">
+              {digestLookbackError}
+            </p>
+          )}
+        </div>
         {userSchedule === undefined ? (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
         ) : userSchedule === null ? (

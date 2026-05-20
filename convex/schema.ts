@@ -46,6 +46,8 @@ export default defineSchema({
     decisionBriefPreference: v.optional(
       v.union(v.literal("inherit"), v.literal("enabled"), v.literal("disabled")),
     ),
+    /** Calendar days: digest email only lists signals whose linked raw rows fall in this window (see `lib/scan/lookback`). */
+    digestEmailLookbackDays: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

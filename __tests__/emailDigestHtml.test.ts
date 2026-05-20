@@ -15,6 +15,8 @@ describe("buildDigestEmailHtml", () => {
       recommendedActionsSummary: "Validate assumptions with KOLs.",
       confidence: "medium",
       includeDecisionBrief: true,
+      emailLookbackDays: 14,
+      recipientTargetIds: ["t-alpha"],
       items: [
         {
           watchTargetId: "t-alpha",
@@ -36,7 +38,7 @@ describe("buildDigestEmailHtml", () => {
     });
 
     expect(html).toContain("Decision brief");
-    expect(html).toContain("Signals (1)");
+    expect(html).toContain("Signals in the last 14 days (1)");
     expect(html).toContain("Links to original sources");
     expect(html).toContain("View full digest for Atrial Natriuretic Peptide (ANP)");
     expect(html).toMatchSnapshot();
@@ -50,6 +52,8 @@ describe("buildDigestEmailHtml", () => {
       executiveSummary: "<b>unsafe</b>",
       showExecutiveSummary: true,
       includeDecisionBrief: true,
+      emailLookbackDays: 14,
+      recipientTargetIds: ["t-one"],
       items: [
         {
           watchTargetId: "t-one",
@@ -82,9 +86,28 @@ describe("buildDigestEmailHtml", () => {
       recommendedActionsSummary: "Act.",
       confidence: "high",
       includeDecisionBrief: false,
+      emailLookbackDays: 14,
+      recipientTargetIds: [],
       items: [],
       targetDisplayNameById: new Map(),
     });
     expect(html).not.toContain("Decision brief");
+  });
+
+  it("shows per-target empty copy when there are no in-window signals", () => {
+    const html = buildDigestEmailHtml({
+      appUrl: "https://compass.example.com",
+      period: "weekly",
+      dateStr: "Apr 21, 2026",
+      executiveSummary: "Run summary.",
+      showExecutiveSummary: false,
+      includeDecisionBrief: false,
+      emailLookbackDays: 30,
+      recipientTargetIds: ["t-empty"],
+      items: [],
+      targetDisplayNameById: new Map([["t-empty", "Empty target"]]),
+    });
+    expect(html).toContain("Nothing new was found within the last 30 days for this watch target.");
+    expect(html).toContain("Signals in the last 30 days (0)");
   });
 });

@@ -4,10 +4,15 @@ import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { isDecisionBriefEnabledByDefault } from "../lib/digestDecisionPreference";
 import {
-  isDecisionBriefEnabledByDefault,
-  resolveDecisionBriefEnabled,
-} from "../lib/digestDecisionPreference";
+  planDigestEmailForRecipient,
+  type DigestEmailHtmlArgs,
+  type DigestEmailRenderableItem,
+} from "../lib/digestEmailAssembly";
+import { clampDigestEmailLookbackDays } from "../lib/scan/lookback";
+
+export type { DigestEmailHtmlArgs, DigestEmailRenderableItem } from "../lib/digestEmailAssembly";
 
 function escapeHtml(text: string): string {
   return text
@@ -61,35 +66,7 @@ function hrefAttrFromUrl(url: string): string {
   }
 }
 
-export type DigestEmailRenderableItem = {
-  watchTargetId: string;
-  significance: string;
-  category: string;
-  headline: string;
-  synthesis?: string;
-  sources?: Array<{
-    url: string;
-    title?: string;
-    source?: string;
-    date?: string;
-  }>;
-};
-
-export function buildDigestEmailHtml(args: {
-  appUrl: string;
-  period: string;
-  dateStr: string;
-  executiveSummary: string;
-  showExecutiveSummary: boolean;
-  deltaSummary?: string;
-  materialitySummary?: string;
-  strategicReadSummary?: string;
-  recommendedActionsSummary?: string;
-  confidence?: string;
-  includeDecisionBrief: boolean;
-  items: DigestEmailRenderableItem[];
-  targetDisplayNameById: Map<string, string>;
-}): string {
+export function buildDigestEmailHtml(args: DigestEmailHtmlArgs): string {
   const {
     appUrl,
     period,
@@ -102,6 +79,8 @@ export function buildDigestEmailHtml(args: {
     recommendedActionsSummary,
     confidence,
     includeDecisionBrief,
+    emailLookbackDays,
+    recipientTargetIds,
     items,
     targetDisplayNameById,
   } = args;
@@ -112,7 +91,7 @@ export function buildDigestEmailHtml(args: {
     list.push(item);
     itemsByTarget.set(item.watchTargetId, list);
   }
-  const sortedTargetIds = [...itemsByTarget.keys()].sort((a, b) => {
+  const sortedTargetIds = [...recipientTargetIds].sort((a, b) => {
     const na = targetDisplayNameById.get(a) ?? "";
     const nb = targetDisplayNameById.get(b) ?? "";
     return na.localeCompare(nb);
@@ -133,7 +112,7 @@ export function buildDigestEmailHtml(args: {
     (recommendedActionsSummary?.trim() ?? "") !== "" ||
     (strategicReadSummary?.trim() ?? "") !== "" ||
     confidence != null;
-  if (showExecutiveSummary && includeDecisionBrief && hasDecisionBrief) {
+  if (showExecutiveSummary && includeDecisionBrief && hasDecisionBrief && items.length > 0) {
     bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
     bodyHtml += `<h2 style="margin:0 0 10px;font-weight:600;font-size:16px;line-height:1.4;">Decision brief</h2>`;
     if (confidence != null) {
@@ -173,7 +152,8 @@ export function buildDigestEmailHtml(args: {
   }
 
   bodyHtml += `<section style="margin:0 0 16px;">`;
-  bodyHtml += `<h2 style="margin:0;font-size:18px;line-height:1.4;">Signals (${items.length})</h2>`;
+  bodyHtml += `<h2 style="margin:0;font-size:18px;line-height:1.4;">Signals in the last ${escapeHtml(String(emailLookbackDays))} days (${items.length})</h2>`;
+  bodyHtml += `<p style="margin:4px 0 0;font-size:13px;line-height:1.5;color:#6b7280;">Based on publication or ingestion time of linked sources (not scan lookback alone).</p>`;
   bodyHtml += `</section>`;
 
   for (const tid of sortedTargetIds) {
@@ -183,6 +163,11 @@ export function buildDigestEmailHtml(args: {
     bodyHtml += `<h2 style="font-size:18px;line-height:1.4;margin:0 0 8px;">${escapeHtml(name)}</h2>`;
     bodyHtml += `<p style="margin:0 0 12px;font-size:14px;"><a href="${digestHref}" style="color:#2563eb;text-decoration:none;">View full digest for ${escapeHtml(name)}</a></p>`;
     const targetItems = itemsByTarget.get(tid) ?? [];
+    if (targetItems.length === 0) {
+      bodyHtml += `<p style="margin:0;font-size:14px;line-height:1.6;color:#6b7280;">Nothing new was found within the last ${escapeHtml(String(emailLookbackDays))} days for this watch target.</p>`;
+      bodyHtml += `</section>`;
+      continue;
+    }
     bodyHtml += "<ul style=\"margin:0;list-style:none;padding:0;\">";
     for (const it of targetItems) {
       bodyHtml += `<li style="margin:0 0 10px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#ffffff;">`;
@@ -220,7 +205,7 @@ export function buildDigestEmailHtml(args: {
 
   if (sortedTargetIds.length === 0) {
     bodyHtml += `<section style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#ffffff;">`;
-    bodyHtml += `<p style="margin:0;color:#6b7280;font-size:14px;">No per-target signals in this digest for you. <a href="${hubHref}" style="color:#2563eb;text-decoration:none;">Open Watch Targets</a></p>`;
+    bodyHtml += `<p style="margin:0;color:#6b7280;font-size:14px;">No watch targets in this digest run for you. <a href="${hubHref}" style="color:#2563eb;text-decoration:none;">Open Watch Targets</a></p>`;
     bodyHtml += `</section>`;
   }
   bodyHtml += `<p style="margin:20px 0 0;font-size:14px;"><a href="${hubHref}" style="color:#2563eb;text-decoration:none;">Open Compass — Watch Targets</a></p>`;
@@ -254,12 +239,45 @@ export const sendDigestEmail = internalAction({
     const allItems = await ctx.runQuery(internal.digestItems.listByDigestRunInternal, {
       digestRunId,
     });
-    const targetIdsInRun = new Set(scanRun.targetIds);
 
     const targets = await ctx.runQuery(internal.watchTargets.getByIdsInternal, {
       ids: scanRun.targetIds,
     });
     const targetById = new Map(targets.map((t) => [t._id, t]));
+
+    const digestItemsForPlan = allItems.map((item) => ({
+      watchTargetId: String(item.watchTargetId),
+      rawItemIds: item.rawItemIds.map((id) => String(id)),
+      significance: item.significance,
+      category: item.category,
+      headline: item.headline,
+      synthesis: item.synthesis,
+      sources: item.sources,
+    }));
+
+    const allRawIds = [...new Set(allItems.flatMap((item) => item.rawItemIds))];
+    const rawRows =
+      allRawIds.length > 0
+        ? await ctx.runQuery(internal.rawItems.getByIdsInternal, { ids: allRawIds })
+        : [];
+    const rawByIdGlobal = new Map(rawRows.map((r) => [String(r._id), r]));
+
+    const targetDisplayNameById = new Map(
+      [...targetById.entries()].map(([id, target]) => [String(id), target?.displayName ?? ""]),
+    );
+
+    const digestRunForPlan = {
+      generatedAt: digestRun.generatedAt,
+      period: digestRun.period,
+      executiveSummary: digestRun.executiveSummary,
+      deltaSummary: digestRun.deltaSummary,
+      materialitySummary: digestRun.materialitySummary,
+      strategicReadSummary: digestRun.strategicReadSummary,
+      recommendedActionsSummary: digestRun.recommendedActionsSummary,
+      confidence: digestRun.confidence,
+    };
+
+    const scanTargetIdStrs = scanRun.targetIds.map(String);
 
     const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
     const fromEmail = process.env.RESEND_FROM_EMAIL ?? "Compass <notifications@compass.example.com>";
@@ -271,6 +289,7 @@ export const sendDigestEmail = internalAction({
       userId: Id<"users">;
       email: string;
       decisionBriefPreference?: "inherit" | "enabled" | "disabled";
+      digestEmailLookbackDays: number;
     };
     let recipients: Recipient[] = [];
 
@@ -288,6 +307,7 @@ export const sendDigestEmail = internalAction({
               user.decisionBriefPreference === "inherit"
                 ? user.decisionBriefPreference
                 : undefined,
+            digestEmailLookbackDays: clampDigestEmailLookbackDays(user.digestEmailLookbackDays),
           });
         }
       }
@@ -305,6 +325,7 @@ export const sendDigestEmail = internalAction({
               user.decisionBriefPreference === "inherit"
                 ? user.decisionBriefPreference
                 : undefined,
+            digestEmailLookbackDays: clampDigestEmailLookbackDays(user.digestEmailLookbackDays),
           });
         }
       }
@@ -318,43 +339,27 @@ export const sendDigestEmail = internalAction({
     const systemDecisionBriefDefault = isDecisionBriefEnabledByDefault(
       process.env.DECISION_DIGEST_ENABLED,
     );
-    for (const { userId, email, decisionBriefPreference } of recipients) {
+    for (const { userId, email, decisionBriefPreference, digestEmailLookbackDays } of recipients) {
       const subIds = await ctx.runQuery(
         internal.targetSubscriptions.getSubscribedWatchTargetIdsForUserInternal,
         { userId },
       );
-      const allowed =
-        subIds === null ? targetIdsInRun : new Set(subIds);
 
-      const itemsForUser = allItems.filter((item) => allowed.has(item.watchTargetId));
-
-      // Team-filtered users: do not leak run-wide executive summary when they have no allowed items.
-      const showExecutiveSummary = subIds === null || itemsForUser.length > 0;
-      const bodyHtml = buildDigestEmailHtml({
+      const { subject, htmlArgs } = planDigestEmailForRecipient({
+        digestRun: digestRunForPlan,
+        scanRunTargetIds: scanTargetIdStrs,
+        allDigestItems: digestItemsForPlan,
+        targetDisplayNameById,
+        subscribedWatchTargetIds: subIds === null ? null : subIds.map(String),
+        rawById: rawByIdGlobal,
+        digestEmailLookbackDays,
+        decisionBriefPreference,
+        systemDecisionBriefDefault,
         appUrl,
-        period: digestRun.period,
         dateStr,
-        executiveSummary: digestRun.executiveSummary,
-        showExecutiveSummary,
-        deltaSummary: digestRun.deltaSummary,
-        materialitySummary: digestRun.materialitySummary,
-        strategicReadSummary: digestRun.strategicReadSummary,
-        recommendedActionsSummary: digestRun.recommendedActionsSummary,
-        confidence: digestRun.confidence,
-        includeDecisionBrief: resolveDecisionBriefEnabled(
-          decisionBriefPreference,
-          systemDecisionBriefDefault,
-        ),
-        items: itemsForUser,
-        targetDisplayNameById: new Map(
-          [...targetById.entries()].map(([id, target]) => [String(id), target?.displayName ?? ""]),
-        ),
       });
 
-      const multi = scanRun.targetIds.length > 1;
-      const subject = multi
-        ? `Compass: ${digestRun.period} digest (${scanRun.targetIds.length} targets)`
-        : `Compass: New ${digestRun.period} digest`;
+      const bodyHtml = buildDigestEmailHtml(htmlArgs);
 
       console.log("sendDigestEmail: sending", { to: email, subject });
       const res = await fetch("https://api.resend.com/emails", {

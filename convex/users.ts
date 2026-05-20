@@ -6,6 +6,7 @@ import {
   resolveDecisionBriefEnabled,
   type DecisionBriefPreference,
 } from "../lib/digestDecisionPreference";
+import { clampDigestEmailLookbackDays } from "../lib/scan/lookback";
 
 const decisionBriefPreferenceValidator = v.union(
   v.literal("inherit"),
@@ -36,6 +37,7 @@ export const getMe = query({
       _id: v.id("users"),
       email: v.string(),
       decisionBriefPreference: v.optional(decisionBriefPreferenceValidator),
+      digestEmailLookbackDays: v.optional(v.number()),
     }),
   ),
   handler: async (ctx) => {
@@ -51,6 +53,10 @@ export const getMe = query({
         user.decisionBriefPreference === "disabled" ||
         user.decisionBriefPreference === "inherit"
           ? user.decisionBriefPreference
+          : undefined,
+      digestEmailLookbackDays:
+        typeof user.digestEmailLookbackDays === "number" && Number.isFinite(user.digestEmailLookbackDays)
+          ? clampDigestEmailLookbackDays(user.digestEmailLookbackDays)
           : undefined,
     };
   },
@@ -125,5 +131,19 @@ export const setDecisionBriefPreference = mutation({
       updatedAt: Date.now(),
     });
     return { ok: true as const };
+  },
+});
+
+export const setDigestEmailLookbackDays = mutation({
+  args: { days: v.number() },
+  returns: v.object({ ok: v.literal(true), days: v.number() }),
+  handler: async (ctx, { days }) => {
+    const userId = await getOrCreateUserId(ctx);
+    const clamped = clampDigestEmailLookbackDays(days);
+    await ctx.db.patch(userId, {
+      digestEmailLookbackDays: clamped,
+      updatedAt: Date.now(),
+    });
+    return { ok: true as const, days: clamped };
   },
 });
