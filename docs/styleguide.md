@@ -310,11 +310,13 @@ Use `<label>` wrapping `<span className="muted">Label</span>` + `<input>`.
 
 Use for tab-like filters (e.g. timeline focus). Implement with `<Link>` elements and `data-active` attribute.
 
+**Recency (Source Links + Timeline):** Use the **same** `.focus-bar` / `.focus-pill` pattern for a **second** row — **7 days**, **14 days** (default), **30 days**, **All**. Store selection in the **`range`** query param (`7d`, `14d`, `30d`, `all`). **`aria-label`** on the bar: **Recency filter**. Both **target detail** Source Links and **Timeline** must offer the same control (parity with feedback controls in §5.8).
+
 ### 5.8 Feedback Controls (Thumbs up / down)
 
 Use the **same** control everywhere for consistency: `.source-link-feedback`. It is a pill group (gray background `#f3f4f6`, border `#e5e7eb`, border-radius 8px) containing two emoji buttons (👍 👎). Buttons: transparent by default, hover `#e5e7eb`, selected state `aria-pressed="true"` → white background, bold text, subtle box-shadow. No left border or timeline-specific styling.
 
-**Where it appears:** Source Links view (target detail page) and Timeline view. Same class, same look.
+**Where it appears:** Source Links view (target detail page) and Timeline view. Same class, same look. **Recency** pills use the same `.focus-bar` / `.focus-pill` styling (§5.7).
 
 **Behavior variants:**
 - **Record-only** (Source Links view): Clicking records feedback, item stays visible. Both thumbs show current state via `aria-pressed` and the pill selected style.
@@ -369,7 +371,7 @@ align-items: center
 - **Layout:** `.settings-layout` — flex row with `gap: 1.5rem`: `.settings-sidebar` (`flex: 0 0 11rem`, `min-width: 10rem`) wraps the tab rail; `.settings-panels` (`flex: 1`, `min-width: 0`) holds both tab panels.
 - **Page chrome:** `<main class="stack" aria-label="Settings">`, `<h1>Settings</h1>`, muted subtitle (*Team workspace, digest timing, and related preferences.*). Team invite acceptance from `?teamInvite=` runs inside `<Suspense>` (child component); success/error messaging is shown on the **Team** tab (app switches to Team when the invite flow completes or errors).
 - **Tabs:** `nav.settings-sidebar` with `aria-label="Settings categories"`. `.settings-tablist` has `role="tablist"` and `aria-orientation="vertical"` (wide viewports). Tabs: **`Team`** / **`Digest schedule`** — `role="tab"`, stable ids `settings-tab-team` / `settings-tab-digest`, `aria-selected`, `aria-controls` → `settings-panel-team` / `settings-panel-digest`. Panels: `role="tabpanel"`, `aria-labelledby` matching tab id, `hidden` when inactive. Default selected tab: **Team** (`activeTab === "team"`).
-- **Panels — content split:** **Team** — membership, rename (admins), members list, invite-by-email, pending invites (admin), leave team, no-team states (create team, pending invites for email, optional invite-token copy). **Digest schedule** — natural-language schedule + timezone, save/clear, `formatSchedule` preview, plus per-user **Decision brief in digest emails** preference (`Use workspace default` / `Always include` / `Never include`); no team controls here.
+- **Panels — content split:** **Team** — membership, rename (admins), members list, invite-by-email, pending invites (admin), leave team, no-team states (create team, pending invites for email, optional invite-token copy). **Digest schedule** — natural-language schedule + timezone, save/clear, `formatSchedule` preview, plus per-user **Decision brief in digest emails** preference (`Use workspace default` / `Always include` / `Never include`) and **Digest email — sources from the last N days** (fixed list: 7 / 14 / 30 / 60 / 90 from `DIGEST_EMAIL_LOOKBACK_CHOICES`, saved via `users.setDigestEmailLookbackDays`; helper text aligns with digest email wording: linked-source publication or ingestion time, per-target sections even when nothing is recent); no team controls here.
 - **Responsive:** `@media (max-width: 720px)` — `.settings-layout` column; sidebar full width; `.settings-tablist` row + `flex-wrap`; `.settings-tab` `width: auto`.
 - **Classes:** `.settings-tab:focus-visible` uses a blue outline ring (see `app/globals.css`); do not duplicate tab rail / selected styles inline on Settings.
 
@@ -377,7 +379,7 @@ align-items: center
 
 | Layer | Where | What |
 |-------|--------|------|
-| **EARS** | `docs/EARS.md` | R-NAV-6 (tabs + a11y), R-NAV-7 (invite URL → Team tab feedback), R-SCH-1 / R-SCH-7 (digest only in Digest tab), R-TEAM-8 (Team panel behaviors) |
+| **EARS** | `docs/EARS.md` | R-NAV-6 (tabs + a11y), R-NAV-7 (invite URL → Team tab feedback), R-SCH-1 / R-SCH-7 / **R-SCH-9** (digest only in Digest tab; email recency control), R-TEAM-8 (Team panel behaviors) |
 | **HLD** | `docs/HLD.md` §4.2 | Settings UI summary + data flow (schedule API, team invite link) |
 | **LLD** | `docs/LLD.md` §1 | `app/settings/page.tsx`, `app/globals.css` settings classes |
 | **Style (this doc)** | §6 Settings | Visual layout, roles, responsive behavior — canonical for UI chrome |
