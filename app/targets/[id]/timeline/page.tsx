@@ -8,6 +8,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { SourceBadge } from "@/components/compass/SourceBadge";
 import { SourceLinkOverlay } from "@/components/compass/SourceLinkOverlay";
+import {
+  buildSourceLinksQuery,
+  lookbackDaysFromRangeParam,
+} from "@/lib/sourceLinksRecencyUi";
+import { SourceLinksRecencyBar } from "@/components/compass/SourceLinksRecencyBar";
 import type { SourceType } from "@/lib/types";
 import { useState } from "react";
 
@@ -93,6 +98,7 @@ export default function TargetTimelinePage() {
   const id = params.id as string;
   const focusParam = (searchParams.get("focus") ?? "clinical_trials") as FocusValue;
   const focus = FOCUS_OPTIONS.some((o) => o.value === focusParam) ? focusParam : "clinical_trials";
+  const lookbackDays = lookbackDaysFromRangeParam(searchParams.get("range"));
   const sources = getSourcesForFocus(focus);
 
   const target = useQuery(api.watchTargets.get, { id });
@@ -100,7 +106,13 @@ export default function TargetTimelinePage() {
   const items = useQuery(
     api.rawItems.listByWatchTarget,
     validWatchTargetId
-      ? { watchTargetId: validWatchTargetId, limit: 150, sources, excludeHidden: true }
+      ? {
+          watchTargetId: validWatchTargetId,
+          limit: 150,
+          sources,
+          excludeHidden: true,
+          lookbackDays,
+        }
       : "skip"
   );
   const feedbackMap = useQuery(
@@ -168,11 +180,17 @@ export default function TargetTimelinePage() {
         </span>
       </div>
 
+      <SourceLinksRecencyBar
+        basePath={`/targets/${target._id}/timeline`}
+        extraParams={{ focus }}
+        lookbackDays={lookbackDays}
+      />
+
       <div className="focus-bar" role="tablist" aria-label="Focus filter">
         {FOCUS_OPTIONS.map((opt) => (
           <Link
             key={opt.value}
-            href={`/targets/${target._id}/timeline?focus=${opt.value}`}
+            href={`/targets/${target._id}/timeline?${buildSourceLinksQuery({ focus: opt.value }, lookbackDays)}`}
             className="focus-pill"
             data-active={focus === opt.value}
             role="tab"
@@ -188,7 +206,7 @@ export default function TargetTimelinePage() {
           <p>
             No {currentFocusLabel.toLowerCase()} events found yet.
           </p>
-          <Link href={`/targets/${target._id}`}>
+          <Link href={`/targets/${target._id}?${buildSourceLinksQuery({}, lookbackDays)}`}>
             ← Run a scan from {target.displayName}
           </Link>
         </div>

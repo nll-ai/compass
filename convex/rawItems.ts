@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { canViewWatchTarget, getUserIdFromIdentity, getVisibleWatchTargetIds } from "./lib/auth";
+import {
+  DEFAULT_LOOKBACK_DAYS,
+  filterStoredRawLikeByLookback
+} from "../lib/scan/lookback";
 
 const sourceValidator = v.union(
   v.literal("pubmed"),
@@ -198,16 +202,20 @@ export const getExistingExternalIdsByWatchTargetFromServer = query({
   },
 });
 
-/** List Source Links (raw items) for a watch target, newest first. Optionally filter by source(s) for timeline/insight views. When excludeHidden is true, items with thumbs-down feedback are omitted. */
+/** List Source Links (raw items) for a watch target, newest first. Optionally filter by source(s) for timeline/insight views. When `excludeHidden` is true, items with thumbs-down feedback are omitted. Use `lookbackDays` to restrict to recent events (**0** = no date filter). When omitted, defaults to **14** calendar days. */
 export const listByWatchTarget = query({
   args: {
     watchTargetId: v.id("watchTargets"),
     limit: v.optional(v.number()),
     sources: v.optional(v.array(v.string())),
     excludeHidden: v.optional(v.boolean()),
+    /** **0** = show all ages. Omitted → default 14-day window. */
+    lookbackDays: v.optional(v.number()),
   },
-  handler: async (ctx, { watchTargetId, limit = 100, sources, excludeHidden }) => {
+  handler: async (ctx, { watchTargetId, limit = 100, sources, excludeHidden, lookbackDays }) => {
     if (!(await canViewWatchTarget(ctx, watchTargetId))) return [];
+    const lookback =
+      lookbackDays !== undefined ? lookbackDays : DEFAULT_LOOKBACK_DAYS;
     let items = await ctx.db
       .query("rawItems")
       .withIndex("by_watchTarget", (q) => q.eq("watchTargetId", watchTargetId))
@@ -224,6 +232,7 @@ export const listByWatchTarget = query({
       const hiddenIds = new Set(hidden.map((h) => h.rawItemId));
       items = items.filter((i) => !hiddenIds.has(i._id));
     }
+    items = filterStoredRawLikeByLookback(items, lookback, Date.now());
     items.sort((a, b) => (b.publishedAt ?? b._creationTime) - (a.publishedAt ?? a._creationTime));
     return items.slice(0, limit);
   },
@@ -251,5 +260,14 @@ export const getByIds = query({
       (r): r is NonNullable<typeof r> =>
         r != null && visible.has(r.watchTargetId),
     );
+  },
+});
+
+/** Internal: load raw rows by id (digest email source-date filter). */
+export const getByIdsInternal = internalQuery({
+  args: { ids: v.array(v.id("rawItems")) },
+  handler: async (ctx, { ids }) => {
+    const rows = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return rows.filter((r): r is NonNullable<typeof r> => r != null);
   },
 });

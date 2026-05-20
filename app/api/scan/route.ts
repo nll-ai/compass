@@ -22,6 +22,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "period required: daily | weekly" }, { status: 400 });
   }
 
+  if (body.lookbackDays !== undefined) {
+    if (typeof body.lookbackDays !== "number" || !Number.isFinite(body.lookbackDays)) {
+      return NextResponse.json({ error: "lookbackDays must be a finite number" }, { status: 400 });
+    }
+    if (body.lookbackDays < 0 || body.lookbackDays > 365) {
+      return NextResponse.json({ error: "lookbackDays must be from 0 to 365" }, { status: 400 });
+    }
+  }
+
   return runScanPipeline({
     effectiveSecret: auth.effectiveSecret,
     body,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -15,16 +15,20 @@ import type { DigestItem } from "@/lib/types";
 import { getSourceLabel, type SourceId } from "@/lib/sources/registry";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { formatSourceDate } from "@/lib/source-utils";
+import { SourceLinksRecencyBar } from "@/components/compass/SourceLinksRecencyBar";
+import { lookbackDaysFromRangeParam, buildSourceLinksQuery } from "@/lib/sourceLinksRecencyUi";
 
 export default function TargetDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const lookbackDays = lookbackDaysFromRangeParam(searchParams.get("range"));
   const target = useQuery(api.watchTargets.get, { id });
   const validWatchTargetId = target !== undefined && target !== null ? target._id : null;
   const sourceLinks = useQuery(
     api.rawItems.listByWatchTarget,
-    validWatchTargetId ? { watchTargetId: validWatchTargetId, limit: 80 } : "skip"
+    validWatchTargetId ? { watchTargetId: validWatchTargetId, limit: 80, lookbackDays } : "skip"
   );
   const signalReports = useQuery(
     api.digestRuns.listSignalReportsForTarget,
@@ -360,7 +364,7 @@ export default function TargetDetailPage() {
         <ul className="stack" style={{ listStyle: "none", padding: 0, margin: "0.75rem 0 0", gap: "0.5rem" }}>
           <li>
             <Link
-              href={`/targets/${target._id}/timeline`}
+              href={`/targets/${target._id}/timeline?${buildSourceLinksQuery({ focus: "clinical_trials" }, lookbackDays)}`}
               className="card"
               style={{
                 display: "inline-flex",
@@ -406,6 +410,10 @@ export default function TargetDetailPage() {
         <p className="muted" style={{ margin: 0 }}>
           Individual links from each source family (papers, filings, trials, etc.). Each has a summary and substantive content stored 1:1.
         </p>
+        <SourceLinksRecencyBar
+          basePath={`/targets/${target._id}`}
+          lookbackDays={lookbackDays}
+        />
         {sourceLinks === undefined ? (
           <p className="muted" style={{ margin: 0 }}>Loading…</p>
         ) : sourceLinks.length === 0 ? (

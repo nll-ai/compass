@@ -13,6 +13,11 @@ type PubmedScanBody = {
   mode?: "latest" | "comprehensive";
   /** See `ScanPostBody.pubmedPubDate` (LLD §4.2.1). */
   pubmedPubDate?: ScanPostBody["pubmedPubDate"];
+  /**
+   * Recency window (calendar days). **0** = no limit. Omitted → **14** in shared pipeline.
+   * When `pubmedPubDate` is set, it wins for PubMed `esearch`; lookback still applies to digest / filtering.
+   */
+  lookbackDays?: number;
 };
 
 export async function POST(request: Request) {
@@ -37,6 +42,15 @@ export async function POST(request: Request) {
   }
 
   const mode = raw.mode ?? "comprehensive";
+
+  if (raw.lookbackDays !== undefined) {
+    if (typeof raw.lookbackDays !== "number" || !Number.isFinite(raw.lookbackDays)) {
+      return NextResponse.json({ error: "lookbackDays must be a finite number" }, { status: 400 });
+    }
+    if (raw.lookbackDays < 0 || raw.lookbackDays > 365) {
+      return NextResponse.json({ error: "lookbackDays must be from 0 to 365" }, { status: 400 });
+    }
+  }
 
   if (raw.pubmedPubDate != null) {
     if (typeof raw.pubmedPubDate !== "object" || raw.pubmedPubDate === null) {
@@ -73,6 +87,7 @@ export async function POST(request: Request) {
       mode,
       sources: ["pubmed"],
       ...(raw.pubmedPubDate != null ? { pubmedPubDate: raw.pubmedPubDate } : {}),
+      ...(raw.lookbackDays !== undefined ? { lookbackDays: raw.lookbackDays } : {}),
     },
     logLabel: "[POST /api/scan/pubmed]",
   });

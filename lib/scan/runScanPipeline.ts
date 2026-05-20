@@ -17,6 +17,12 @@ import type { ScanOptions, ScanTarget } from "./types";
 import type { FeedbackForMission } from "./agent-context";
 import { normalizePubmedPubDateInput } from "./pubmed-esearch-dates";
 import {
+  filterInboundRawItemsByLookback,
+  filterStoredRawLikeByLookback,
+  pubmedPubDateRangeForLookbackDays,
+  resolveLookbackDaysFromRequest,
+} from "./lookback";
+import {
   isDecisionBriefEnabledByDefault,
   resolveDecisionBriefEnabled,
 } from "../digestDecisionPreference";
@@ -40,6 +46,11 @@ export type ScanPostBody = {
     mindate?: string;
     maxdate?: string;
   };
+  /**
+   * Recency window (calendar days) for digest input, Source-link ingestion filtering, and (when
+   * `pubmedPubDate` is omitted) PubMed `esearch` `pdat` range. Omitted → **14**. **0** = no limit.
+   */
+  lookbackDays?: number;
 };
 
 export type RunScanPipelineOptions = {
@@ -65,9 +76,17 @@ export async function runScanPipeline({
 
   const { scanRunId: bodyScanRunId, period, targetIds, mode, sources: bodySources } = body;
   const scanMode = mode === "comprehensive" ? "comprehensive" : "latest";
+  const lookbackDays = resolveLookbackDaysFromRequest(body.lookbackDays);
+  const pubmedPubDateFromBody = body.pubmedPubDate !== undefined && body.pubmedPubDate !== null;
+  const pubmedPubDate = pubmedPubDateFromBody
+    ? normalizePubmedPubDateInput(body.pubmedPubDate)
+    : lookbackDays > 0
+      ? pubmedPubDateRangeForLookbackDays(lookbackDays)
+      : normalizePubmedPubDateInput(undefined);
   const scanOptions: ScanOptions = {
     mode: scanMode,
-    pubmedPubDate: normalizePubmedPubDateInput(body.pubmedPubDate),
+    lookbackDays,
+    pubmedPubDate,
   };
 
   const client = new ConvexHttpClient(convexUrl);
@@ -199,11 +218,13 @@ export async function runScanPipeline({
           ? result.items
           : await filterRelevantItems(result.items, scanTargets, env.GROQ_API_KEY);
       const itemsToUpsert = await enrichMissingSummaries(relevantItems, source, env.GROQ_API_KEY);
+      const now = Date.now();
+      const recencyScoped = filterInboundRawItemsByLookback(itemsToUpsert, lookbackDays, now);
       const { totalFound: t, newFound: n } = await client.mutation(api.rawItems.upsertRawItemsFromServer, {
         secret: effectiveSecret,
         scanRunId,
         source,
-        items: itemsToUpsert.map((i) => ({ ...i, metadata: i.metadata ?? {} })),
+        items: recencyScoped.map((i) => ({ ...i, metadata: i.metadata ?? {} })),
       });
       totalFound += t;
       newFound += n;
@@ -236,6 +257,7 @@ export async function runScanPipeline({
         secret: effectiveSecret,
         scanRunId,
       });
+      const digestSourceItems = filterStoredRawLikeByLookback(newItems, lookbackDays, Date.now());
       const feedbackContext = await client.query(api.digestItems.getFeedbackForPrompt, { limit: 40 });
       const systemDecisionBriefDefault = isDecisionBriefEnabledByDefault(
         process.env.DECISION_DIGEST_ENABLED,
@@ -278,7 +300,7 @@ export async function runScanPipeline({
       }));
       const payload = env.GROQ_API_KEY
         ? await generateDigestWithAI(
-            newItems,
+            digestSourceItems,
             (scan?.period as "daily" | "weekly") ?? "daily",
             digestTargets,
             env.GROQ_API_KEY,
@@ -287,7 +309,7 @@ export async function runScanPipeline({
             { useDecisionDigest: shouldGenerateDecisionDigest },
           )
         : await generateDigest(
-            newItems,
+            digestSourceItems,
             (scan?.period as "daily" | "weekly") ?? "daily",
             new Map(scanTargets.map((t) => [t._id, t.displayName])),
             env.GROQ_API_KEY,

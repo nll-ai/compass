@@ -12,6 +12,11 @@ export type PubmedPubDateMode = "contemporaneous" | "unbounded" | "range";
 export interface ScanOptions {
   mode: ScanMode;
   /**
+   * Recency window for digest input and optional pre-upsert filtering (calendar days).
+   * **0** = no limit (all time). Omitted in `ScanOptions` is normal; the pipeline sets this from the HTTP body (default **14** when omitted there).
+   */
+  lookbackDays?: number;
+  /**
    * PubMed publication-date window for `esearch` (`mindate` / `maxdate` + `datetype=pdat`).
    * - **contemporaneous:** last N calendar years through today (UTC), NCBI `YYYY/MM/DD`.
    * **unbounded:** no date params (search full PubMed for the query).

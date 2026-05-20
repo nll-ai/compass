@@ -21,7 +21,7 @@ Compass is a lightweight competitive intelligence monitoring system for small bi
 
 ## Scan & digest pipeline
 
-- **Run a scan**: Dashboard "Run scan now", watch target detail "Run scan for this watch target", or Setup step 3. These call `POST /api/scan`, which runs all source scanners and digest generation **in your app** using keys from `.env.local` (so local dev works without Convex env vars).
+- **Run a scan**: Dashboard "Run scan now", watch target detail "Run scan for this watch target", or Setup step 3. These call `POST /api/scan`, which runs all source scanners and digest generation **in your app** using keys from `.env.local` (so local dev works without Convex env vars). By default the pipeline uses a **14-day** recency window for new raw items and digests (`lookbackDays`; use **`0`** for no limit). **Source Links** and **Timeline** in the app use the same default with an **All** option in the UI.
 - **Crons**: Optional (e.g. Vercel cron); can call `POST /api/scan` with `Authorization: Bearer <SCAN_SECRET>` and body `{ "period": "daily" }`.
 
 ### Manual scan (local dev)
