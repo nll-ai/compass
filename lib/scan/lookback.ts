@@ -135,8 +135,10 @@ export function filterStoredRawLikeByLookback<T extends { publishedAt?: number; 
 }
 
 /**
- * Before upsert, drop obviously-old rows when they have `publishedAt`. Undated inbound items
- * are kept so we do not lose filings/news that lack a parsed date.
+ * Before upsert, drop rows whose `publishedAt` falls before the lookback cutoff.
+ * Undated inbound items (publishedAt == null) are also dropped when lookbackDays > 0,
+ * because the lack of a date means we cannot confirm recency and downstream filters
+ * would fall back to `_creationTime` (making them appear falsely recent).
  *
  * :param lookbackDays: **0** disables filtering.
  */
@@ -144,7 +146,7 @@ export function filterInboundRawItemsByLookback(items: RawItemInput[], lookbackD
   if (lookbackDays <= 0) return items;
   const cutoff = nowMs - lookbackDays * MS_PER_DAY;
   return items.filter((i) => {
-    if (i.publishedAt == null) return true;
+    if (i.publishedAt == null) return false;
     return i.publishedAt >= cutoff;
   });
 }
