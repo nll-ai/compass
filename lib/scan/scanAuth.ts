@@ -9,15 +9,23 @@ export function isSameOriginScanRequest(request: Request): boolean {
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
   if (!origin && !referer) return true;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const allowed = new URL(appUrl).origin;
-  if (origin && new URL(origin).origin === allowed) return true;
-  if (referer && new URL(referer).origin === allowed) return true;
-  if (origin && (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")))
-    return true;
-  if (referer && (referer.startsWith("http://localhost:") || referer.startsWith("http://127.0.0.1:")))
-    return true;
+  const allowed = getAllowedScanOrigins(request);
+  if (origin && allowed.has(new URL(origin).origin)) return true;
+  if (referer && allowed.has(new URL(referer).origin)) return true;
   return false;
+}
+
+function getAllowedScanOrigins(request: Request): Set<string> {
+  const origins = new Set<string>();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  origins.add(new URL(appUrl).origin);
+  origins.add("http://localhost:3000");
+  const host = request.headers.get("host");
+  if (host) {
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    origins.add(`${proto}://${host}`);
+  }
+  return origins;
 }
 
 /**
