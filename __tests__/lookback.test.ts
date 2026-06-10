@@ -68,9 +68,13 @@ describe("filterStoredRawLikeByLookback", () => {
 
 describe("filterInboundRawItemsByLookback", () => {
   const now = 2_000_000_000_000;
-  it("keeps items without publishedAt", () => {
+  it("drops items without publishedAt when lookbackDays > 0", () => {
     const items = [{ watchTargetId: "x" as never, externalId: "1", title: "t", url: "u" }];
-    expect(filterInboundRawItemsByLookback(items, 14, now)).toHaveLength(1);
+    expect(filterInboundRawItemsByLookback(items, 14, now)).toHaveLength(0);
+  });
+  it("keeps items without publishedAt when lookbackDays is 0", () => {
+    const items = [{ watchTargetId: "x" as never, externalId: "1", title: "t", url: "u" }];
+    expect(filterInboundRawItemsByLookback(items, 0, now)).toHaveLength(1);
   });
   it("drops old publishedAt", () => {
     const old = now - 86400000 * 100;
@@ -84,6 +88,19 @@ describe("filterInboundRawItemsByLookback", () => {
       },
     ];
     expect(filterInboundRawItemsByLookback(items, 14, now)).toHaveLength(0);
+  });
+  it("keeps recent publishedAt within lookback window", () => {
+    const recent = now - 86400000 * 5;
+    const items = [
+      {
+        watchTargetId: "x" as never,
+        externalId: "1",
+        title: "t",
+        url: "u",
+        publishedAt: recent,
+      },
+    ];
+    expect(filterInboundRawItemsByLookback(items, 14, now)).toHaveLength(1);
   });
 });
 
