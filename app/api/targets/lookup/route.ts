@@ -10,9 +10,9 @@ const lookupSchema = z.object({
   aliases: z.array(z.string()).describe("Alternative names and search terms to monitor"),
   type: z.enum(["drug", "target", "company", "person"]).describe("drug = therapeutic asset, target = biological target, company = company, person = researcher/faculty"),
   therapeuticArea: z.enum(["cardiovascular", "oncology", "other"]),
-  indication: z.string().nullable().optional().describe("Disease or condition, e.g. HFpEF, SCLC"),
-  company: z.string().nullable().optional().describe("Sponsor or developer company name"),
-  affiliation: z.string().nullable().optional().describe("Institutional affiliation for researchers, e.g. 'Stanford University'"),
+  indication: z.string().nullable().describe("Disease or condition, e.g. HFpEF, SCLC"),
+  company: z.string().nullable().describe("Sponsor or developer company name"),
+  affiliation: z.string().nullable().describe("Institutional affiliation for researchers, e.g. 'Stanford University'"),
 });
 
 async function searchExa(query: string): Promise<{ title: string; text?: string; url: string }[]> {
