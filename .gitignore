@@ -30,3 +30,4 @@ eval/edgar/outputs/latest.json
 eval/edgar/outputs/latest.md
 eval/diff/runs/*
 !eval/diff/runs/.gitkeep
+.vercel
