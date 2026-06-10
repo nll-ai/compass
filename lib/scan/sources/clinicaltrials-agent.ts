@@ -9,6 +9,36 @@ import { createGroqModel, groqModelFastId } from "../../llm/groq";
 import type { RawItemInput, ScanTarget, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry } from "../fetchWithRetry";
+import { DEFAULT_LOOKBACK_DAYS } from "../lookback";
+
+const CT_API_BASE = "https://clinicaltrials.gov/api/v2/studies";
+
+function ctDateRangeFilterParam(lookbackDays: number): string {
+  const safe = Math.max(1, lookbackDays);
+  const now = new Date();
+  const start = new Date(now.getTime() - safe * 86_400_000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return `AREA[LastUpdatePostDate]RANGE[${fmt(start)},MAX]`;
+}
+
+function parseDateToEpoch(dateStr: string | undefined): number | undefined {
+  if (!dateStr) return undefined;
+  const ms = new Date(dateStr).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+function extractPublishedAt(statusModule?: {
+  lastUpdatePostDateStruct?: { date?: string };
+  studyFirstPostDateStruct?: { date?: string };
+  startDateStruct?: { date?: string };
+}): number | undefined {
+  if (!statusModule) return undefined;
+  return (
+    parseDateToEpoch(statusModule.lastUpdatePostDateStruct?.date) ??
+    parseDateToEpoch(statusModule.studyFirstPostDateStruct?.date) ??
+    parseDateToEpoch(statusModule.startDateStruct?.date)
+  );
+}
 
 function assignWatchTargetId(term: string, targets: ScanTarget[]): ScanTarget["_id"] {
   const t = term.toLowerCase();
@@ -48,14 +78,27 @@ export async function runClinicalTrialsAgent(
       pageSize: z.number().min(1).max(50).default(15).describe("Max number of studies to return"),
     }),
     execute: async ({ queryTerm, pageSize }) => {
-      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(queryTerm.trim())}&pageSize=${pageSize}`;
+      const lookbackDays = context.scanOptions?.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
+      const params = new URLSearchParams({
+        "query.term": queryTerm.trim(),
+        pageSize: String(pageSize),
+      });
+      if (lookbackDays > 0) {
+        params.set("filter.advanced", ctDateRangeFilterParam(lookbackDays));
+      }
+      const url = `${CT_API_BASE}?${params.toString()}`;
       const res = await fetchWithRetry(url);
       if (!res.ok) return { count: 0, message: `ClinicalTrials: ${res.status}` };
       const data = (await res.json()) as {
         studies?: Array<{
           protocolSection?: {
             identificationModule?: { nctId?: string; briefTitle?: string };
-            statusModule?: { startDateStruct?: { date?: string }; overallStatus?: string };
+            statusModule?: {
+              lastUpdatePostDateStruct?: { date?: string };
+              studyFirstPostDateStruct?: { date?: string };
+              startDateStruct?: { date?: string };
+              overallStatus?: string;
+            };
             descriptionModule?: { briefSummary?: string };
             designModule?: { phases?: string[] };
           };
@@ -67,12 +110,12 @@ export async function runClinicalTrialsAgent(
         const protocol = study.protocolSection;
         const nctId = protocol?.identificationModule?.nctId ?? "";
         const title = protocol?.identificationModule?.briefTitle ?? nctId;
-        const startDate = protocol?.statusModule?.startDateStruct?.date;
-        const overallStatus = protocol?.statusModule?.overallStatus;
+        const statusModule = protocol?.statusModule;
+        const startDate = statusModule?.startDateStruct?.date;
+        const overallStatus = statusModule?.overallStatus;
         const briefSummary = (protocol?.descriptionModule?.briefSummary ?? "").trim();
         const phases = protocol?.designModule?.phases ?? [];
-        let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
-        if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
+        const publishedAt = extractPublishedAt(statusModule);
         const dedupeKey = `${watchTargetId}:${nctId}`;
         if (!nctId || seenNctIds.has(dedupeKey)) continue;
         seenNctIds.add(dedupeKey);
