@@ -2,22 +2,63 @@ import type { RawItemInput, SourceResult } from "../types";
 import type { SourceAgentContext } from "../agent-context";
 import { fetchWithRetry } from "../fetchWithRetry";
 import { runClinicalTrialsAgent } from "./clinicaltrials-agent";
+import { DEFAULT_LOOKBACK_DAYS } from "../lookback";
 
 const PROCEDURAL_PAGE_SIZE = 15;
 
-/** One procedural API call to ClinicalTrials.gov; returns items for dedupe/merge. */
+const CT_API_BASE = "https://clinicaltrials.gov/api/v2/studies";
+
+function ctDateRangeFilterParam(lookbackDays: number): string {
+  const safe = Math.max(1, lookbackDays);
+  const now = new Date();
+  const start = new Date(now.getTime() - safe * 86_400_000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return `AREA[LastUpdatePostDate]RANGE[${fmt(start)},MAX]`;
+}
+
+function parseDateToEpoch(dateStr: string | undefined): number | undefined {
+  if (!dateStr) return undefined;
+  const ms = new Date(dateStr).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+function extractPublishedAt(statusModule?: {
+  lastUpdatePostDateStruct?: { date?: string };
+  studyFirstPostDateStruct?: { date?: string };
+  startDateStruct?: { date?: string };
+}): number | undefined {
+  if (!statusModule) return undefined;
+  return (
+    parseDateToEpoch(statusModule.lastUpdatePostDateStruct?.date) ??
+    parseDateToEpoch(statusModule.studyFirstPostDateStruct?.date) ??
+    parseDateToEpoch(statusModule.startDateStruct?.date)
+  );
+}
+
 async function fetchClinicalTrialsProcedural(
   queryTerm: string,
-  watchTargetId: RawItemInput["watchTargetId"]
+  watchTargetId: RawItemInput["watchTargetId"],
+  lookbackDays: number,
 ): Promise<RawItemInput[]> {
-  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(queryTerm.trim())}&pageSize=${PROCEDURAL_PAGE_SIZE}`;
+  const params = new URLSearchParams({
+    "query.term": queryTerm.trim(),
+    pageSize: String(PROCEDURAL_PAGE_SIZE),
+  });
+  if (lookbackDays > 0) {
+    params.set("filter.advanced", ctDateRangeFilterParam(lookbackDays));
+  }
+  const url = `${CT_API_BASE}?${params.toString()}`;
   const res = await fetchWithRetry(url);
   if (!res.ok) return [];
   const data = (await res.json()) as {
     studies?: Array<{
       protocolSection?: {
         identificationModule?: { nctId?: string; briefTitle?: string };
-        statusModule?: { startDateStruct?: { date?: string } };
+        statusModule?: {
+          lastUpdatePostDateStruct?: { date?: string };
+          studyFirstPostDateStruct?: { date?: string };
+          startDateStruct?: { date?: string };
+        };
       };
     }>;
   };
@@ -26,9 +67,9 @@ async function fetchClinicalTrialsProcedural(
   for (const study of studies) {
     const nctId = study.protocolSection?.identificationModule?.nctId ?? "";
     const title = study.protocolSection?.identificationModule?.briefTitle ?? nctId;
-    const startDate = study.protocolSection?.statusModule?.startDateStruct?.date;
-    let publishedAt: number | undefined = startDate ? new Date(startDate).getTime() : undefined;
-    if (publishedAt != null && Number.isNaN(publishedAt)) publishedAt = undefined;
+    const statusModule = study.protocolSection?.statusModule;
+    const publishedAt = extractPublishedAt(statusModule);
+    const startDate = statusModule?.startDateStruct?.date;
     if (!nctId) continue;
     items.push({
       watchTargetId,
@@ -42,12 +83,9 @@ async function fetchClinicalTrialsProcedural(
   return items;
 }
 
-/**
- * Procedural ClinicalTrials.gov path: one API call per target (name/displayName/alias).
- * Used only as fallback when the agent returns no items.
- */
 async function runClinicalTrialsProceduralPath(context: SourceAgentContext): Promise<SourceResult> {
   const items: RawItemInput[] = [];
+  const lookbackDays = context.scanOptions?.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
 
   for (const target of context.targets) {
     const query = [target.name, target.displayName, ...(target.aliases ?? [])]
@@ -55,7 +93,7 @@ async function runClinicalTrialsProceduralPath(context: SourceAgentContext): Pro
       .map((s) => s.trim())
       .find((s) => s.length >= 2);
     if (!query) continue;
-    const procedural = await fetchClinicalTrialsProcedural(query, target._id);
+    const procedural = await fetchClinicalTrialsProcedural(query, target._id, lookbackDays);
     items.push(...procedural);
   }
   return { items };
