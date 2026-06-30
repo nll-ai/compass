@@ -56,6 +56,7 @@ Each data source has a paired background/text color for badges and visual marker
 | `exa` | `#dbeafe` | `#1e40af` |
 | `rss` | `#f3e8ff` | `#6b21a8` |
 | `openfda` | `#d1fae5` | `#065f46` |
+| `fiercepharma` | `#fee2e2` | `#991b1b` |
 
 **Rule:** Source badges MUST use `.source-badge` with `data-source` attribute. Never hardcode source colors inline.
 

@@ -12,7 +12,7 @@ Compass is a competitive intelligence monitoring app for biotech teams. Users de
 
 - **Web app (Next.js App Router):** Watch Targets (hub), target detail, settings, digest/timeline views, chat. Navigation: Watch Targets | Chat | Settings. Home (`/`) redirects to `/targets` for signed-in users. Dashboard and History are legacy redirects to `/targets`.
 - **Backend (Convex):** Auth, persistence, queries/mutations, scheduled jobs (cron), and server-side actions (e.g. HTTP outbound).
-- **Scan pipeline:** Next.js API routes **`POST /api/scan`** (full or filtered sources) and **`POST /api/scan/pubmed`** (PubMed-only, one watch target; same server auth as `/api/scan`), plus Convex mutations for run lifecycle; source agents run in-process or via external APIs (PubMed, ClinicalTrials.gov, EDGAR, Exa, etc.). Shared implementation: `lib/scan/runScanPipeline.ts`, `lib/scan/scanAuth.ts`.
+- **Scan pipeline:** Next.js API routes **`POST /api/scan`** (full or filtered sources) and **`POST /api/scan/pubmed`** (PubMed-only, one watch target; same server auth as `/api/scan`), plus Convex mutations for run lifecycle; source agents run in-process or via external APIs (PubMed, ClinicalTrials.gov, EDGAR, Exa, FiercePharma, etc.). Shared implementation: `lib/scan/runScanPipeline.ts`, `lib/scan/scanAuth.ts`.
 - **Digest pipeline:** After a scan completes with new items, digest content is generated (in API route or Convex action) and stored; side effects (Slack, email) are triggered via Convex scheduler.
 
 ---
@@ -100,6 +100,14 @@ Person-type targets are scanned for publications and news mentioning the researc
 
 - Source agents (e.g. SEC EDGAR) can fetch document content and produce substantive summaries (stored in `rawItems.abstract`) using full watch-target context (name, type, company, notes). The timeline and source-link overlay display these when present, so users see what the filing or article discloses rather than only the title or a generic form/date line. See LLD §4.2–§4.2.1 (scan routes) and EARS §4.5.
 
+### 4.6 FiercePharma news source
+
+- FiercePharma is a dedicated scan source (`source: "fiercepharma"`) for pharma industry news (FDA actions, approvals, deals, M&A, pipeline updates). It is best suited to **drug** and **company** watch targets; biological **target**-type entries rarely surface in trade news and remain covered by PubMed.
+- **Retrieval (Exa domain-scoped search; primary):** When `EXA_API_KEY` is set, the source runs one Exa `/search` per watch target restricted to `includeDomains: ["fiercepharma.com"]`, with `category: "news"` and `startPublishedDate` derived from the scan's `lookbackDays` window (server-side recency). This is genuine per-target search over FiercePharma's archive rather than a fixed feed dump, and it follows the same pattern as every other source: a real retrieval backend with the shared `filterRelevantItems` LLM pass applied downstream for precision. Exa returns article text (`contents.text`) and `publishedDate` in the response, so no separate page fetch is needed and `publishedAt` is populated directly.
+- **Retrieval (RSS fallback; no `EXA_API_KEY`):** The source fetches the single global FiercePharma RSS feed (`https://www.fiercepharma.com/rss/xml`; unauthenticated) and keyword-matches each article's title and description against every watch target (`name` + `displayName` + `aliases` + `company` + `learnedQueryTerms`, minus `excludeQueryTerms`). FiercePharma's own site search is bot-protected (HTTP **403**), so this fallback cannot query the site directly; recall here is bounded by the feed's recent-articles window.
+- **Summaries:** Article abstracts are derived from article content. On the Exa path the returned text is turned into a target-tailored 2–4 sentence summary (mirrors the SEC EDGAR content-summary path) when `GROQ_API_KEY` is set; on the RSS fallback the agent best-effort fetches the article page for a content summary, falling back to the feed description (lede). Anything still missing an abstract is filled by the shared `enrichMissingSummaries` pass.
+- **Dedup and recency:** One `rawItems` row per matched target (per-target dedup, like all sources); articles already stored for a target are skipped via `existingExternalIdsByWatchTarget`. `publishedAt` (from Exa `publishedDate` or the parsed feed `pubDate`) drives the standard `lookbackDays` recency filter (items without a date would be dropped when `lookbackDays > 0`). See LLD §4.2/§5.4 and EARS §4.6.
+
 ---
 
 ## 5. External integrations
@@ -109,7 +117,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 | **WorkOS AuthKit** | Sign-in, session, JWT for Convex | Inbound (auth), Outbound (token validation) |
 | **Resend** | Digest notification email | Outbound (Convex action → `https://api.resend.com/emails`) |
 | **Slack** | Digest delivery (Block Kit) | Outbound (Convex or app) |
-| **PubMed, ClinicalTrials.gov, EDGAR, Exa, openFDA, RSS** | Scan data sources | Outbound from scan pipeline |
+| **PubMed, ClinicalTrials.gov, EDGAR, Exa, openFDA, RSS, FiercePharma** | Scan data sources | Outbound from scan pipeline |
 
 ### 5.1 Offline diff eval (developer)
 
