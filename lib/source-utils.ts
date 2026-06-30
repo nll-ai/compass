@@ -15,6 +15,7 @@ const dateLabels: Record<string, string> = {
   openfda: "Published",
   rss: "Published",
   patents: "Published",
+  fiercepharma: "Published",
 };
 
 function formatDateMs(ms: number): string {

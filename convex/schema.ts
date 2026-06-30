@@ -136,6 +136,7 @@ export default defineSchema({
       v.literal("openfda"),
       v.literal("rss"),
       v.literal("patents"),
+      v.literal("fiercepharma"),
     ),
     externalId: v.string(),
     title: v.string(),

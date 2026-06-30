@@ -11,6 +11,7 @@ export const SOURCE_REGISTRY = [
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },
   { id: "openfda", label: "openFDA" },
   { id: "rss", label: "RSS" },
+  { id: "fiercepharma", label: "FiercePharma" },
 ] as const;
 
 export type SourceId = (typeof SOURCE_REGISTRY)[number]["id"];

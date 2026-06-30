@@ -15,6 +15,7 @@ const sourceValidator = v.union(
   v.literal("openfda"),
   v.literal("rss"),
   v.literal("patents"),
+  v.literal("fiercepharma"),
 );
 
 const rawItemInputValidator = v.object({

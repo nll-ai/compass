@@ -476,6 +476,7 @@ a {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+/* Source-type colors — keep in sync with docs/styleguide.md §2. */
 .source-badge[data-source="clinicaltrials"] { background: #ccfbf1; color: #0f766e; }
 .source-badge[data-source="edgar"]          { background: #fef3c7; color: #92400e; }
 .source-badge[data-source="pubmed"]         { background: #e0e7ff; color: #3730a3; }
@@ -484,6 +485,7 @@ a {
 .source-badge[data-source="exa"]            { background: #dbeafe; color: #1e40af; }
 .source-badge[data-source="rss"]            { background: #f3e8ff; color: #6b21a8; }
 .source-badge[data-source="openfda"]        { background: #d1fae5; color: #065f46; }
+.source-badge[data-source="fiercepharma"]   { background: #fee2e2; color: #991b1b; }
 
 /* ---- Settings + Watch Targets hub (sidebar tabs; shared classes) ---- */
 

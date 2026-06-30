@@ -8,6 +8,7 @@ import { runEdgar } from "./edgar";
 import { runOpenFda } from "./openfda";
 import { runRss } from "./rss";
 import { runPatents } from "./patents";
+import { runFiercePharma } from "./fiercepharma";
 import { runBiorxivStub } from "./biorxiv-stub";
 
 export type { SourceId } from "../../sources/registry";
@@ -21,6 +22,7 @@ const RUNNERS: Record<SourceId, (context: SourceAgentContext) => Promise<SourceR
   openfda: (ctx) => runOpenFda(ctx),
   rss: (ctx) => runRss(ctx),
   patents: (ctx) => runPatents(ctx),
+  fiercepharma: (ctx) => runFiercePharma(ctx),
 };
 
 /** When provided, only these sources are run; otherwise all sources. */
