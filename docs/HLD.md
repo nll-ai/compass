@@ -222,14 +222,15 @@ Compass is evolving from flat per-target monitoring into **knowledge-graph-drive
 
 ### 9.2 Backbones (open, CC-BY; attribution stored in edge evidence)
 
-- **UniProt** (REST) — normalize targets (symbol → accession + Ensembl).
-- **Open Targets Platform** (GraphQL) — target↔disease associations and `knownDrugs` (drug → company → indication → phase) with evidence scores.
-- **ChEMBL** (REST) — normalize drugs (molecule → id, max phase, synonyms).
+- **UniProt** (REST) — normalize targets (symbol → accession + gene symbol).
+- **Ensembl** (REST) — gene symbol → Ensembl gene id (ENSG), the key Open Targets uses.
+- **Open Targets Platform** (GraphQL) — target↔disease associations with evidence scores. (`knownDrugs` is deprecated and no longer used.)
+- **ChEMBL** (REST) — clinical-drug mechanisms (`drug_mechanism`) by UniProt accession; **small-molecule-centric** (antibody/ADC drugs are sparse here).
 - **SEC EDGAR** — company normalization (existing `resolveCompanyToSEC`, by CIK).
 
 ### 9.3 Phase 1 — read-only backbone graph
 
-When a watch target is created, Compass resolves it to backbone entities and **auto-ingests** its typed 1–2 hop neighborhood (Convex action `kg.ingestNeighborhood`, scheduled from `watchTargets.create`, writing via the internal mutation `entities.upsertFromBackbone`; idempotent/re-runnable for refresh). The target detail page renders a **structured Knowledge Graph panel** (Drugs / Developers / Indications / Related targets, each with source and score). Phase 1 builds the typed neighborhood for **biological target** entities (UniProt → Open Targets); drug and company targets are resolved and linked to a KG entity, with richer neighborhoods (ChEMBL/SEC) in Phase 2. No scan-pipeline changes in Phase 1.
+When a watch target is created, Compass resolves it to backbone entities and **auto-ingests** its typed 1–2 hop neighborhood (Convex action `kg.ingestNeighborhood`, scheduled from `watchTargets.create`, writing via the internal mutation `entities.upsertFromBackbone`; idempotent/re-runnable for refresh). The target detail page renders a **structured Knowledge Graph panel** (Drugs / Developers / Indications / Related targets, each with source and score). Phase 1 builds the typed neighborhood for **biological target** entities (UniProt → Open Targets); drug and company targets are resolved and linked to a KG entity, with richer neighborhoods (ChEMBL/SEC) in Phase 2. No scan-pipeline changes in Phase 1. Phase-1 drug coverage is ChEMBL (small-molecule-centric); **antibody/ADC drugs and their developers/companies** — exactly the B7-H3 case (e.g. Daiichi's ifinatamab deruxtecan) — are not in ChEMBL and arrive in Phase 2 (via ClinicalTrials.gov interventions, which Compass already scans, plus a company source).
 
 ### 9.4 Roadmap
 

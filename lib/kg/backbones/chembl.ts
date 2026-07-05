@@ -14,6 +14,67 @@ export interface ChEMBLMolecule {
   synonyms: string[];
 }
 
+/** A clinical drug targeting a protein (via ChEMBL drug_mechanism), with its max phase. */
+export interface ChEMBLDrug {
+  chemblId: string;
+  name: string;
+  maxPhase: number;
+}
+
+/** Clinical drugs targeting a protein, resolved via the protein's UniProt accession. */
+export async function fetchTargetDrugsByUniprot(uniprotAccession: string): Promise<ChEMBLDrug[]> {
+  const acc = uniprotAccession.trim();
+  if (!acc) return [];
+
+  // 1. UniProt accession → ChEMBL target id.
+  const tRes = await fetchWithRetry(
+    `${CHEMBL}/target.json?target_components__accession=${encodeURIComponent(acc)}&limit=1`,
+    { headers: { Accept: "application/json" } },
+  ).catch(() => null);
+  if (!tRes || !tRes.ok) return [];
+  const tData = await tRes.json().catch(() => null);
+  const targetId = (tData?.targets ?? [])[0]?.target_chembl_id;
+  if (!targetId) return [];
+
+  // 2. drug_mechanism by target → molecule ids.
+  const dmRes = await fetchWithRetry(
+    `${CHEMBL}/drug_mechanism.json?target_chembl_id=${encodeURIComponent(targetId)}&limit=25`,
+    { headers: { Accept: "application/json" } },
+  ).catch(() => null);
+  if (!dmRes || !dmRes.ok) return [];
+  const dmData = await dmRes.json().catch(() => null);
+  const molIds: string[] = Array.from(
+    new Set(
+      (dmData?.drug_mechanisms ?? [])
+        .map((d: any) => d?.molecule_chembl_id)
+        .filter((x: any): x is string => typeof x === "string"),
+    ),
+  );
+  if (molIds.length === 0) return [];
+
+  // 3. molecule batch → names / phases.
+  const mRes = await fetchWithRetry(
+    `${CHEMBL}/molecule.json?molecule_chembl_id__in=${molIds.slice(0, 25).join(",")}&limit=25`,
+    { headers: { Accept: "application/json" } },
+  ).catch(() => null);
+  if (!mRes || !mRes.ok) return [];
+  const mData = await mRes.json().catch(() => null);
+  const byId = new Map<string, any>(
+    (mData?.molecules ?? []).map((m: any) => [m?.molecule_chembl_id, m]),
+  );
+  const out: ChEMBLDrug[] = [];
+  for (const id of molIds) {
+    const m = byId.get(id);
+    if (!m) continue;
+    out.push({
+      chemblId: id,
+      name: m?.pref_name || id,
+      maxPhase: typeof m?.max_phase === "number" ? m.max_phase : -1,
+    });
+  }
+  return out;
+}
+
 /** Search ChEMBL for a molecule (drug) by name; prefer a molecule with a development phase. */
 export async function searchMolecule(query: string): Promise<ChEMBLMolecule | null> {
   const q = query.trim();

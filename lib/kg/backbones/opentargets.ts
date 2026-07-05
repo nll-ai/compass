@@ -41,6 +41,20 @@ async function gql<T>(query: string, variables: Record<string, unknown>): Promis
   }
 }
 
+/** Resolve an Open Targets gene id (ENSG...) for a target symbol/name via search. */
+export async function searchTargetId(query: string): Promise<string | null> {
+  const q = query.trim();
+  if (!q) return null;
+  const data = await gql<{
+    search?: { hits?: Array<{ id?: string; name?: string; score?: number }> };
+  }>(
+    `query($q: String!){ search(queryString: $q, entity: "target"){ hits { id name score } } }`,
+    { q },
+  );
+  const hits = data?.search?.hits ?? [];
+  return hits[0]?.id ?? null;
+}
+
 /** Top disease associations for a target, ranked by overall score. */
 export async function fetchDiseaseAssociations(
   ensemblId: string,

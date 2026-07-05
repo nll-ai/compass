@@ -39,7 +39,12 @@ function parseEntry(r: any): UniProtEntry | null {
     .flatMap((g) => [g?.geneName?.value, ...(g?.synonyms ?? []).map((s: any) => s?.value)])
     .filter((x): x is string => typeof x === "string" && x.length > 0);
   const xrefs: any[] = r?.uniProtKBCrossReferences ?? [];
-  const ensembl: string | undefined = xrefs.find((x) => x?.database === "Ensembl")?.id;
+  const ensemblIds = xrefs
+    .filter((x) => x?.database === "Ensembl")
+    .map((x) => x?.id)
+    .filter((x): x is string => typeof x === "string");
+  // Open Targets keys on the gene id (ENSG), not a transcript (ENST) or protein (ENSP).
+  const ensembl: string | undefined = ensemblIds.find((id) => id.startsWith("ENSG"));
   const funcComment: any = (r?.comments ?? []).find((c: any) => c?.commentType === "FUNCTION");
   const summary: string | undefined =
     funcComment && Array.isArray(funcComment.texts)

@@ -2,12 +2,20 @@
  * KG ingest builder: resolve a watch target to its central entity and assemble its
  * backbone neighborhood (entities + edges). Pure — performs HTTP via backbone clients
  * but does not touch Convex. Caps neighborhood size to keep the upsert bounded.
+ *
+ * Phase 1 neighborhood (biological targets):
+ *   - ENSG via Ensembl (UniProt xrefs are often transcripts; OT search is schema-unstable)
+ *   - target ↔ indication (implicated_in) via Open Targets disease associations
+ *   - drug → target (targets) via ChEMBL drug_mechanism (by UniProt accession)
+ * Developers/companies are Phase 2 (ChEMBL has no developer field; OT `knownDrugs` is deprecated).
  */
 
 import type { EdgeSpec, EdgeType, EntitySpec, ExternalRefs, NeighborhoodGraph } from "./types";
 import { refKeyFor } from "./types";
 import { resolveCentral } from "./resolve";
-import { fetchDiseaseAssociations, fetchKnownDrugs } from "./backbones/opentargets";
+import { fetchDiseaseAssociations } from "./backbones/opentargets";
+import { resolveGeneId } from "./backbones/ensembl";
+import { fetchTargetDrugsByUniprot } from "./backbones/chembl";
 
 const MAX_NEIGHBOR_ENTITIES = 30;
 const MAX_EDGES = 60;
@@ -22,7 +30,7 @@ type WatchTargetLike = {
   therapeuticArea?: "cardiovascular" | "oncology" | "other";
 };
 
-/** Phase → confidence that a drug truly targets/develops against this target. */
+/** Development phase → confidence that a drug truly targets this protein. */
 function phaseToConfidence(phase: number): number {
   if (phase >= 4) return 0.95;
   if (phase === 3) return 0.85;
@@ -36,16 +44,14 @@ function otUrl(ensemblId: string): string {
 }
 
 export async function buildNeighborhood(target: WatchTargetLike): Promise<NeighborhoodGraph> {
-  const { central, ensemblId } = await resolveCentral(target);
+  const { central, ensemblId: ensemblIdRaw } = await resolveCentral(target);
 
   const entitiesByRef = new Map<string, EntitySpec>();
   const edges: EdgeSpec[] = [];
   const addEntity = (e: EntitySpec): string => {
     const existing = entitiesByRef.get(e.refKey);
     if (existing) {
-      // merge aliases
-      const merged = Array.from(new Set([...existing.aliases, ...e.aliases]));
-      existing.aliases = merged;
+      existing.aliases = Array.from(new Set([...existing.aliases, ...e.aliases]));
       return existing.refKey;
     }
     entitiesByRef.set(e.refKey, e);
@@ -64,76 +70,66 @@ export async function buildNeighborhood(target: WatchTargetLike): Promise<Neighb
   };
 
   // Only biological targets have a backbone neighborhood in Phase 1.
-  if (central.type === "target" && ensemblId) {
-    const url = otUrl(ensemblId);
-
-    // Target ↔ Indication (implicated_in)
-    const associations = await fetchDiseaseAssociations(ensemblId).catch(() => []);
-    for (const a of associations) {
-      if (entitiesByRef.size >= MAX_NEIGHBOR_ENTITIES) break;
-      const refs: ExternalRefs = a.diseaseId ? { openTargetsId: a.diseaseId } : {};
-      const refKey = refKeyFor("indication", a.diseaseName, refs);
-      addEntity({
-        type: "indication",
-        canonicalName: a.diseaseName,
-        displayName: a.diseaseName,
-        aliases: [],
-        externalRefs: refs,
-        refKey,
-      });
-      addEdge(
-        central.refKey,
-        refKey,
-        "implicated_in",
-        Math.max(0.05, Math.min(1, a.score)),
-        [{ source: "opentargets:association", score: a.score, url }],
-      );
+  if (central.type === "target") {
+    // Open Targets keys on the gene id (ENSG). Prefer a UniProt ENSG; else resolve via Ensembl.
+    let ensemblId =
+      ensemblIdRaw && ensemblIdRaw.startsWith("ENSG") ? ensemblIdRaw : undefined;
+    if (!ensemblId) {
+      for (const cand of [central.canonicalName, ...central.aliases]) {
+        ensemblId = (await resolveGeneId(cand).catch(() => null)) ?? undefined;
+        if (ensemblId) break;
+      }
     }
 
-    // Drug → Target (targets), Drug → Company (developed_by), Drug → Indication (treats)
-    const drugs = await fetchKnownDrugs(ensemblId).catch(() => []);
-    for (const d of drugs) {
-      if (entitiesByRef.size >= MAX_NEIGHBOR_ENTITIES) break;
-      const drugRefs: ExternalRefs = d.drugId.startsWith("CHEMBL")
-        ? { chembl: d.drugId }
-        : { openTargetsId: d.drugId };
-      const drugKey = addEntity({
-        type: "drug",
-        canonicalName: d.drugName,
-        displayName: d.drugName,
-        aliases: [],
-        externalRefs: drugRefs,
-        refKey: refKeyFor("drug", d.drugName, drugRefs),
-      });
-      const conf = phaseToConfidence(d.phase);
-      // drug -[targets]-> target (central)
-      addEdge(drugKey, central.refKey, "targets", conf, [
-        { source: "opentargets:drug", score: d.phase, url, snippet: d.drugType },
-      ]);
-
-      if (d.company) {
-        const coRefs: ExternalRefs = {};
-        const coKey = addEntity({
-          type: "company",
-          canonicalName: d.company,
-          displayName: d.company,
-          aliases: [],
-          externalRefs: coRefs,
-          refKey: refKeyFor("company", d.company, coRefs),
-        });
-        addEdge(drugKey, coKey, "developed_by", conf, [{ source: "opentargets:drug", url }]);
-      }
-      if (d.diseaseId && d.diseaseName) {
-        const refs: ExternalRefs = { openTargetsId: d.diseaseId };
-        const indKey = addEntity({
+    if (ensemblId) {
+      const url = otUrl(ensemblId);
+      // Target ↔ Indication (implicated_in) via Open Targets disease associations.
+      const associations = await fetchDiseaseAssociations(ensemblId).catch(() => []);
+      for (const a of associations) {
+        if (entitiesByRef.size >= MAX_NEIGHBOR_ENTITIES) break;
+        const refs: ExternalRefs = a.diseaseId ? { openTargetsId: a.diseaseId } : {};
+        const refKey = refKeyFor("indication", a.diseaseName, refs);
+        addEntity({
           type: "indication",
-          canonicalName: d.diseaseName,
-          displayName: d.diseaseName,
+          canonicalName: a.diseaseName,
+          displayName: a.diseaseName,
           aliases: [],
           externalRefs: refs,
-          refKey: refKeyFor("indication", d.diseaseName, refs),
+          refKey,
         });
-        addEdge(drugKey, indKey, "treats", conf, [{ source: "opentargets:drug", url }]);
+        addEdge(
+          central.refKey,
+          refKey,
+          "implicated_in",
+          Math.max(0.05, Math.min(1, a.score)),
+          [{ source: "opentargets:association", score: a.score, url }],
+        );
+      }
+    }
+
+    // Drugs targeting this protein (ChEMBL drug_mechanism, via the UniProt accession)
+    // → drug -[targets]-> target (central).
+    const uniprot = central.externalRefs.uniprot;
+    if (uniprot) {
+      const chemblDrugs = await fetchTargetDrugsByUniprot(uniprot).catch(() => []);
+      for (const d of chemblDrugs) {
+        if (entitiesByRef.size >= MAX_NEIGHBOR_ENTITIES) break;
+        const drugRefs: ExternalRefs = { chembl: d.chemblId };
+        const drugKey = addEntity({
+          type: "drug",
+          canonicalName: d.name,
+          displayName: d.name,
+          aliases: [],
+          externalRefs: drugRefs,
+          refKey: refKeyFor("drug", d.name, drugRefs),
+        });
+        addEdge(drugKey, central.refKey, "targets", phaseToConfidence(d.maxPhase), [
+          {
+            source: "chembl:drug_mechanism",
+            score: d.maxPhase,
+            url: `https://www.ebi.ac.uk/chembl/compound_report_card/${d.chemblId}`,
+          },
+        ]);
       }
     }
   }
