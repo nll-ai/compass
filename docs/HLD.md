@@ -41,6 +41,7 @@ Person-type targets are scanned for publications and news mentioning the researc
 | **Scan API (`app/api/scan`, `app/api/scan/pubmed`)** | **`POST /api/scan`:** manual UI, Re-run, and Convex `callScanApi`. Optional **`lookbackDays`** (default **14** calendar days; **`0`** = no recency cutoff for digest input or inbound upserts): when **> 0**, digest synthesis and upserts consider only rows whose effective time is within the last **N** calendar days (**`publishedAt`**, else **`_creationTime`**); inbound rows **without** `publishedAt` are dropped (no date = cannot confirm recency; downstream fallback to `_creationTime` would make them appear falsely recent). When **`pubmedPubDate` is omitted** and **`lookbackDays` > 0**, PubMed **`esearch`** uses a **`pdat`** range from **today − N days** through **today** (UTC); when **`pubmedPubDate` is omitted** and **`lookbackDays` is `0`**, PubMed **retrieval** uses the default **contemporaneous** (**3-year**) **`pdat`** window instead of the last-**N**-days range. ClinicalTrials.gov queries use **`filter.advanced`** with an **`AREA[LastUpdatePostDate]RANGE[<mindate>,MAX]`** clause when **`lookbackDays` > 0**, filtering server-side to recently updated trials; `publishedAt` is extracted as **`lastUpdatePostDateStruct`** (last posted update) → **`studyFirstPostDateStruct`** (first posted) → **`startDateStruct`** (enrollment start) in priority order. **`POST /api/scan/pubmed`:** programmatic PubMed-only scan for one `watchTargetId` (optional `period`, `mode`, `pubmedPubDate`, `lookbackDays`); same `SCAN_SECRET` / Bearer auth. If the client supplies **`pubmedPubDate`**, it controls PubMed **`esearch`** dates; **`lookbackDays`** still controls digest input and inbound filtering when **> 0**. PubMed publication-date filters are server-side, not LLM-supplied. Both routes use shared pipeline code; run source agents, write raw items and digest when applicable. |
 | **Cross-target graph (Convex)** | After a successful scan, reconciles `graphCrossTargetEdges` when the same `source` + `externalId` appears under two or more watch targets in the same workspace (`team` or `user` scope). The Watch Targets hub **Connections** tab subscribes to **`crossTargetGraph.listEdgesForViewer` only** when that tab is active **and** the hub has **at least one** loaded watch target; it **groups** edges by **target pair**, **auto-selects the first pair** when edges exist, loads evidence via **`rawItems.getByIds`**, and **deduplicates** shared links **by URL** in the Shared sources column. |
 | **Schedule parse API (app/api/schedule/parse)** | Parses natural-language schedule strings into structured daily/weekly/timezone for Convex. |
+| **Knowledge graph (Convex + lib/kg)** | Resolves watch targets to backbone entities (UniProt/Open Targets/ChEMBL/SEC) and ingests a typed neighborhood (`entities`, `entityEdges`); target detail renders a KG panel. Phase 1: read-only backbone. |
 | **Resend (external)** | Email delivery for digest notifications; invoked from Convex action via REST API. |
 
 ---
@@ -206,3 +207,34 @@ Detailed CLI commands and log line references live in **LLD §8**. Use this sect
 ### 8.4 Slack digest (when enabled)
 
 - Block Kit messages typically include a header (daily/weekly), executive summary, per-item blocks (significance, category, headline, synthesis, sources), optional strategic callout, and actions to open the full digest / settings in the web app.
+
+---
+
+## 9. Knowledge graph (Phase 1 + roadmap)
+
+Compass is evolving from flat per-target monitoring into **knowledge-graph-driven discovery**: watching one entity surfaces signals along its biomedical graph neighborhood ("you watch B7-H3; here is signal on Daiichi Sankyo's ifinatamab deruxtecan, which targets B7-H3"). This is a typed, evidence-bearing entity-relationship store — distinct from the earlier co-mention `graphCrossTargetEdges` side-effect, which it is intended to supersede.
+
+### 9.1 Model
+
+- **Entities** (`entities`): typed nodes — `target | drug | company | indication | mechanism | person | trial` — with `canonicalName`, `aliases`, and normalized `externalRefs` (UniProt/Ensembl/ChEMBL/Open Targets/SEC CIK/MeSH). Entities dedupe by a denormalized `refKey` (e.g. `uniprot:Q5ZPR3`), so B7-H3 / B7H3 / CD276 resolve to **one shared entity**.
+- **Edges** (`entityEdges`): typed, directed (`targets | targeted_by | developed_by | treats | tested_in | implicated_in | competes_with | analog_of`), each carrying `evidence[]` (source url + score + optional raw item) and a `confidence`. A `label` + `pending` flag reserves space for AI-proposed relationship types (Phase 4).
+- **Scope:** a **global shared backbone** (`global: true`) holds ontology facts common to all workspaces; each workspace overlays only its own observed edges (`origin: extracted | user`). A watch target points into the KG via `watchTargets.entityId`.
+
+### 9.2 Backbones (open, CC-BY; attribution stored in edge evidence)
+
+- **UniProt** (REST) — normalize targets (symbol → accession + Ensembl).
+- **Open Targets Platform** (GraphQL) — target↔disease associations and `knownDrugs` (drug → company → indication → phase) with evidence scores.
+- **ChEMBL** (REST) — normalize drugs (molecule → id, max phase, synonyms).
+- **SEC EDGAR** — company normalization (existing `resolveCompanyToSEC`, by CIK).
+
+### 9.3 Phase 1 — read-only backbone graph
+
+When a watch target is created, Compass resolves it to backbone entities and **auto-ingests** its typed 1–2 hop neighborhood (Convex action `kg.ingestNeighborhood`, scheduled from `watchTargets.create`, writing via the internal mutation `entities.upsertFromBackbone`; idempotent/re-runnable for refresh). The target detail page renders a **structured Knowledge Graph panel** (Drugs / Developers / Indications / Related targets, each with source and score). Phase 1 builds the typed neighborhood for **biological target** entities (UniProt → Open Targets); drug and company targets are resolved and linked to a KG entity, with richer neighborhoods (ChEMBL/SEC) in Phase 2. No scan-pipeline changes in Phase 1.
+
+### 9.4 Roadmap
+
+- **Phase 2 — Graph-aware retrieval:** expand scan seeds by 1-hop neighbors and attribute found signals along the graph; "watch this too" suggestions.
+- **Phase 3 — Content extraction + grooming:** LLM extracts (entity, relation, entity) triples from raw items → `origin: extracted` edges; scheduled reconcile/merge/prune; thumbs up/down feeds edge confidence.
+- **Phase 4 — Evolution:** AI-proposed schema changes (pending → promoted on approval), confidence/time-decay, cross-workspace dedup polish.
+
+See LLD §5.5–§5.6 and EARS §9.

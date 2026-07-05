@@ -56,6 +56,12 @@ This document specifies implementation-level details: modules, Convex functions,
 | `lib/scan/sources/fiercepharma.ts` | Thin runner `runFiercePharma(context)`; guards on targets and delegates to the agent (mirrors `exa.ts`). |
 | `lib/scan/sources/fiercepharma-agent.ts` | FiercePharma source. **Primary:** one Exa `/search` per target with `includeDomains: ["fiercepharma.com"]`, `category: "news"`, `startPublishedDate` from `lookbackDays`, and `contents.text` (near-clone of `exa-agent.ts` with a domain lock + recency window). **Fallback (no `EXA_API_KEY`):** fetches the global RSS feed (`fetchWithRetry`), parses it dependency-free, keyword-matches title/description to targets. Skips articles already stored per target via `existingExternalIdsByWatchTarget`; maps Exa `publishedDate` / parsed feed `pubDate` to `publishedAt`; derives `abstract` from article content (Exa text or best-effort page fetch → feed lede). |
 
+| `lib/kg/backbones/{uniprot,opentargets,chembl}.ts` | Open backbone clients (REST/GraphQL via `fetchWithRetry`); CC-BY; return typed normalized records (UniProt target normalize, Open Targets associations + knownDrugs, ChEMBL compounds). |
+| `lib/kg/resolve.ts` | Resolve a watch target (name/type/company) → externalRefs + central `EntitySpec` (UniProt for targets, ChEMBL for drugs, existing `resolveCompanyToSEC` for companies). |
+| `lib/kg/ingest.ts` | `buildNeighborhood(target)` — resolve + fetch 1–2 hop neighbors, return `{ central, neighbors: { entities[], edges[] } }` (pure; no Convex). |
+| `convex/kg.ts` | `"use node"` internal action `kg.ingestNeighborhood` (reads target → `buildNeighborhood` → writes via `entities.upsertFromBackbone`). Best-effort, non-blocking. |
+| `convex/entities.ts` | Internal mutation `entities.upsertFromBackbone` (dedup entities by `refKey`, edges by `by_pair_type`, link `watchTargets.entityId`) and viewer-gated query `entities.getNeighborhood` (1-hop neighborhood + 2-hop developers). |
+
 ---
 
 ## 2. Convex public API (relevant functions)
@@ -290,6 +296,28 @@ This document specifies implementation-level details: modules, Convex functions,
 - **Props:** `onAdded?: (targetId: Id<"watchTargets">) => void`.
 - **Invocation:** After successful `createTarget(...)`, component calls `onAdded?.(id)` with the returned id.
 
+### 5.7 entities (knowledge graph nodes)
+
+- `type` (`target | drug | company | indication | mechanism | person | trial`), `canonicalName`, `displayName`, `aliases[]`.
+- `refKey` (denormalized primary external ref, e.g. `uniprot:Q5ZPR3`; falls back to `name:<type>:<lower(name)>` when no external ref resolves) — the dedup key.
+- `externalRefs` (`{ uniprot?, ensembl?, chembl?, openTargetsId?, secCik?, mesh? }`), `therapeuticArea?`, `summary?`.
+- `global: boolean` (shared backbone vs workspace overlay), `workspaceId?` (`team:<id>` / `user:<id>`), `confidence`, `origin` (`backbone | extracted | user`), timestamps.
+- Indexes: `by_refKey`, `by_global_type`, `by_workspace`.
+
+### 5.8 entityEdges (knowledge graph edges)
+
+- `fromId`, `toId`, `type` (`targets | targeted_by | developed_by | treats | tested_in | implicated_in | competes_with | analog_of`), `label?` + `pending` (AI-proposed types, Phase 4).
+- `evidence[]` (`{ source, url?, snippet?, rawItemId?, score? }`), `confidence`, `origin`, `global`, `workspaceId?`, `firstSeenAt`, `lastSeenAt`.
+- Indexes: `by_from_type`, `by_to`, `by_pair_type` (`fromId`, `toId`, `type`) for upsert dedup.
+- `watchTargets.entityId?` links a watch target to its KG entity (set by ingest).
+
+### 5.9 Knowledge graph ingest + query
+
+- **Trigger:** `watchTargets.create` schedules `internal.kg.ingestNeighborhood({ watchTargetId })` via `ctx.scheduler.runAfter(0, …)` (event-driven; does not block create).
+- **`kg.ingestNeighborhood`** (internal action, `"use node"`): reads the watch target, runs `buildNeighborhood` (`lib/kg/ingest.ts`: resolve via UniProt/ChEMBL/SEC, fetch Open Targets associations + knownDrugs), then `ctx.runMutation(internal.entities.upsertFromBackbone, { watchTargetId, graph })`. Best-effort: errors are logged and do not fail target creation.
+- **`entities.upsertFromBackbone`** (internal mutation): upserts the central entity and neighbor entities by `refKey` (insert or patch + merge aliases), upserts edges by `by_pair_type`, patches `watchTargets.entityId` to the central entity. Neighborhood size is capped to stay within Convex read/write limits.
+- **`entities.getNeighborhood`** (query, auth: `canViewWatchTarget`): args `{ watchTargetId }`; returns the central entity plus its 1-hop neighbors with edge type/confidence/evidence for the panel.
+
 ---
 
 ## 6. Environment and configuration
@@ -297,6 +325,7 @@ This document specifies implementation-level details: modules, Convex functions,
 - **Convex env (server-side):** `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `APP_URL` (digest links, team invite accept links, and **must be reachable by Convex** when `callScanApi` hits `POST /api/scan`), `SCAN_SECRET` (**must match** Next.js / Vercel), optional `MIGRATION_SECRET` for `teams.runTeamBootstrap`. Set via `npx convex env set` (use **`--prod`** for production deployment).
 - **Next.js env:** `SCAN_SECRET`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_APP_URL`, **`GROQ_API_KEY`** (LLM via `@ai-sdk/groq`; default model **GPT-OSS 120B** / `openai/gpt-oss-120b`; optional `GROQ_MODEL_FAST` / `GROQ_MODEL_SMART`), WorkOS keys, etc.; see `.env.example`. Optional product flags: **`DECISION_DIGEST_ENABLED`**, **`NEXT_PUBLIC_DIGEST_TELEMETRY`**. **Convex cloud:** set **`GROQ_API_KEY`** (and optional model vars) for `watchTargets` learned-query refresh (`refreshLearnedTermsForTarget` internal action).
 - **FiercePharma:** primary retrieval uses **`EXA_API_KEY`** (domain-scoped Exa search); the RSS fallback needs no key. Summaries reuse **`GROQ_API_KEY`** (else shared `enrichMissingSummaries`).
+- **Knowledge graph backbones:** no API keys required (UniProt REST, Open Targets Platform GraphQL, and ChEMBL REST are unauthenticated and CC-BY); company normalization reuses **`SEC_EDGAR_USER_AGENT`** via `resolveCompanyToSEC`.
 - **Local vs remote Convex:** If `.env.local` has `CONVEX_DEPLOYMENT` starting with `local:`, the CLI/backend is local; otherwise cloud. Local Convex + local Next: `APP_URL` can be `http://localhost:3000`. Remote Convex cannot call `localhost`; use a deployed URL or tunnel.
 
 ---

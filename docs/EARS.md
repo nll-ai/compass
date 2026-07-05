@@ -176,3 +176,16 @@ Requirements are written using the Easy Approach to Requirements Syntax (EARS). 
 - **Styleguide:** [docs/styleguide.md](styleguide.md) — typography, spacing, components, **Settings** and **Watch Targets** sidebar tabs (layout, a11y, responsive). User-visible Settings chrome must match the styleguide and satisfy R-NAV-6 / R-NAV-7 / R-SCH-* / R-TEAM-8; Watch Targets tab chrome must match §6 Watch Targets and R-SCAN-6 / R-SCAN-7 / R-SCAN-8 / R-SCAN-9; target ownership and read-only UI align with R-TEAM-16.
 
 Each EARS requirement should be satisfiable against LLD contracts and HLD data flow; **Settings** and **Watch Targets** hub changes should also match the styleguide section and their traceability tables. When in doubt, update HLD, LLD, EARS, and the styleguide together.
+
+---
+
+## 9. Knowledge graph (Phase 1: read-only backbone)
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| R-KG-1 | Event-driven | **When** a watch target is created, **the system shall** schedule knowledge-graph ingest that resolves the target to backbone entities (UniProt/ChEMBL/SEC) and, for supported entity types (biological targets in Phase 1), ingests its typed neighborhood, **without blocking** target creation. |
+| R-KG-2 | Ubiquitous | **The system shall** dedupe knowledge-graph entities by a normalized external reference (`refKey`) across workspaces, so the same biomedical entity (e.g. B7-H3 / CD276) resolves to **one** shared backbone node. |
+| R-KG-3 | State-driven | **Where** a watch target has a linked knowledge-graph entity, **the system shall** show a Knowledge Graph panel on the target detail page presenting its neighborhood (e.g. drugs, developers, indications, related targets) grouped by neighbor entity type, with confidence and source evidence. |
+| R-KG-4 | Ubiquitous | **The system shall** store provenance on every knowledge-graph edge (`evidence[]` with source and url/score) so backbone facts are attributable (CC-BY). |
+| R-KG-5 | Unwanted behavior | **The system shall not** fail watch target creation when knowledge-graph resolution or ingest errors; ingest is best-effort, non-blocking, and logged. |
+| R-KG-6 | Optional feature | **For Phase 4**, **the system may** accept AI-proposed relationship types as pending labels; such types **shall not** enter the typed edge union until promoted on approval. |
