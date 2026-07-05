@@ -16,6 +16,7 @@ import { getSourceLabel, type SourceId } from "@/lib/sources/registry";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { formatSourceDate } from "@/lib/source-utils";
 import { SourceLinksRecencyBar } from "@/components/compass/SourceLinksRecencyBar";
+import { KnowledgeGraphPanel } from "@/components/compass/KnowledgeGraphPanel";
 import { lookbackDaysFromRangeParam, buildSourceLinksQuery } from "@/lib/sourceLinksRecencyUi";
 
 export default function TargetDetailPage() {
@@ -355,6 +356,8 @@ export default function TargetDetailPage() {
           to choose when digests run (team: subscribed targets included in the shared run).
         </p>
       </section>
+
+      <KnowledgeGraphPanel watchTargetId={target._id} />
 
       <section className="card stack">
         <h2 style={{ margin: 0 }}>Insights View</h2>
