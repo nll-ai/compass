@@ -70,6 +70,8 @@ export default defineSchema({
       v.literal("oncology"),
       v.literal("other"),
     ),
+    /** Link into the knowledge graph (entities table); set by KG ingest after create. */
+    entityId: v.optional(v.id("entities")),
     active: v.boolean(),
     affiliation: v.optional(v.string()),
     notes: v.optional(v.string()),
@@ -338,4 +340,78 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_watchTarget", ["watchTargetId"])
     .index("by_user_target", ["userId", "watchTargetId"]),
+
+  /**
+   * Knowledge graph nodes. Global backbone entities (global:true) are shared across workspaces;
+   * workspace-scoped entities (global:false, workspaceId "team:<id>"|"user:<id>") are overlays.
+   * Dedup by refKey (denormalized primary external ref, e.g. "uniprot:Q5ZPR3"); "name:<type>:<lower(name)>" fallback when no external ref.
+   */
+  entities: defineTable({
+    type: v.union(
+      v.literal("target"),
+      v.literal("drug"),
+      v.literal("company"),
+      v.literal("indication"),
+      v.literal("mechanism"),
+      v.literal("person"),
+      v.literal("trial"),
+    ),
+    canonicalName: v.string(),
+    displayName: v.string(),
+    aliases: v.array(v.string()),
+    refKey: v.string(),
+    externalRefs: v.any(),
+    therapeuticArea: v.optional(
+      v.union(v.literal("cardiovascular"), v.literal("oncology"), v.literal("other")),
+    ),
+    summary: v.optional(v.string()),
+    global: v.boolean(),
+    workspaceId: v.optional(v.string()),
+    confidence: v.number(),
+    origin: v.union(v.literal("backbone"), v.literal("extracted"), v.literal("user")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_refKey", ["refKey"])
+    .index("by_global_type", ["global", "type"])
+    .index("by_workspace", ["workspaceId"]),
+
+  /**
+   * Knowledge graph edges: typed, directed, evidence-bearing. Evidence holds the source/url/score
+   * (and, for extracted edges, the rawItem). `label`+`pending` reserve space for AI-proposed types.
+   */
+  entityEdges: defineTable({
+    fromId: v.id("entities"),
+    toId: v.id("entities"),
+    type: v.union(
+      v.literal("targets"),
+      v.literal("targeted_by"),
+      v.literal("developed_by"),
+      v.literal("treats"),
+      v.literal("tested_in"),
+      v.literal("implicated_in"),
+      v.literal("competes_with"),
+      v.literal("analog_of"),
+    ),
+    label: v.optional(v.string()),
+    pending: v.boolean(),
+    evidence: v.array(
+      v.object({
+        source: v.string(),
+        url: v.optional(v.string()),
+        snippet: v.optional(v.string()),
+        rawItemId: v.optional(v.id("rawItems")),
+        score: v.optional(v.number()),
+      }),
+    ),
+    confidence: v.number(),
+    origin: v.union(v.literal("backbone"), v.literal("extracted"), v.literal("user")),
+    global: v.boolean(),
+    workspaceId: v.optional(v.string()),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+  })
+    .index("by_from_type", ["fromId", "type"])
+    .index("by_to", ["toId"])
+    .index("by_pair_type", ["fromId", "toId", "type"]),
 });

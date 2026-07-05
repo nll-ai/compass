@@ -299,6 +299,8 @@ export async function resolveCompanyToSEC(companyOrTicker: string): Promise<{
   ticker: string;
   title: string;
   displayName: string;
+  /** Zero-padded 10-digit SEC Central Index Key (stable company id). */
+  cik: string;
 } | null> {
   const { companies, error } = await getSECCompanyList();
   if (error || companies.length === 0) return null;
@@ -313,6 +315,7 @@ export async function resolveCompanyToSEC(companyOrTicker: string): Promise<{
     ticker: match.ticker,
     title: match.title ?? match.ticker,
     displayName,
+    cik: padCik(match.cik_str),
   };
 }
 

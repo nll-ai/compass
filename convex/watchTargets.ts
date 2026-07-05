@@ -204,6 +204,8 @@ export const create = mutation({
       watchTargetId: targetId,
       subscribedAt: now,
     });
+    // Resolve + ingest the knowledge-graph backbone neighborhood (best-effort, non-blocking).
+    await ctx.scheduler.runAfter(0, internal.kg.ingestNeighborhood, { watchTargetId: targetId });
     return targetId;
   },
 });
